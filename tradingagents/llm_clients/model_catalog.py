@@ -103,6 +103,7 @@ MODEL_OPTIONS: ProviderModeOptions = {
     },
     "google": {
         "quick": [
+            ("Gemini 3.5 Flash - Latest fast (GA)", "gemini-3.5-flash"),
             ("Gemini 3 Flash - Next-gen fast (preview)", "gemini-3-flash-preview"),
             ("Gemini 2.5 Flash - Balanced, stable", "gemini-2.5-flash"),
             ("Gemini 3.1 Flash Lite - Most cost-efficient (GA)", "gemini-3.1-flash-lite"),

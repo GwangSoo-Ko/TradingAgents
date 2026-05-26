@@ -61,7 +61,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # being forwarded to Gemini, producing malformed request URLs).
     "backend_url": None,
     # Provider-specific thinking configuration
-    "google_thinking_level": None,      # "high", "minimal", etc.
+    "google_thinking_level": "high",    # "high", "minimal", etc.
     "openai_reasoning_effort": None,    # "medium", "high", "low"
     "anthropic_effort": None,           # "high", "medium", "low"
     # Checkpoint/resume: when True, LangGraph saves state after each node
