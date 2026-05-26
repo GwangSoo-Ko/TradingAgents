@@ -217,3 +217,9 @@ __marimo__/
 
 # Cache
 **/data_cache/
+
+# macOS
+.DS_Store
+
+# TradingAgents local outputs
+reports/
