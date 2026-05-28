@@ -19,7 +19,9 @@ turn 0. The LLM produces the sentiment report in a single invocation.
 See: https://github.com/TauricResearch/TradingAgents/issues/557
 """
 
+import logging
 from datetime import datetime, timedelta
+from typing import Optional
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from tradingagents.agents.utils.agent_utils import (
@@ -30,9 +32,31 @@ from tradingagents.agents.utils.agent_utils import (
 from tradingagents.dataflows.reddit import fetch_reddit_posts
 from tradingagents.dataflows.stocktwits import fetch_stocktwits_messages
 
+logger = logging.getLogger(__name__)
+
 
 def _seven_days_back(trade_date: str) -> str:
     return (datetime.strptime(trade_date, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+
+
+def _resolve_company_name(ticker: str) -> Optional[str]:
+    """Best-effort lookup of a ticker's company name via yfinance.
+
+    Used by the Reddit fetcher to expand recall: short tickers (NTRA,
+    PSNL, BWXT) rarely appear verbatim in retail posts; the company name
+    catches the same threads under their conversational spelling.
+
+    Returns ``None`` on any failure — the Reddit fetcher falls back to a
+    ticker-only search, matching the pre-existing behaviour.
+    """
+    try:
+        import yfinance as yf
+        info = yf.Ticker(ticker).info or {}
+        name = info.get("longName") or info.get("shortName")
+        return name if isinstance(name, str) and name.strip() else None
+    except Exception as exc:
+        logger.warning("Could not resolve company name for %s: %s", ticker, exc)
+        return None
 
 
 def create_sentiment_analyst(llm):
@@ -54,7 +78,10 @@ def create_sentiment_analyst(llm):
         # always sees something — either real data or a clear placeholder.
         news_block = get_news.func(ticker, start_date, end_date)
         stocktwits_block = fetch_stocktwits_messages(ticker, limit=30)
-        reddit_block = fetch_reddit_posts(ticker)
+        # Reddit users typically spell out the company name rather than the
+        # ticker (esp. for short, non-obvious tickers like NTRA/PSNL/BWXT),
+        # so we OR the ticker with the yfinance-resolved name to widen recall.
+        reddit_block = fetch_reddit_posts(ticker, company_name=_resolve_company_name(ticker))
 
         system_message = _build_system_message(
             ticker=ticker,
