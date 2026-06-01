@@ -519,6 +519,10 @@ def get_user_selections():
             f"[green]Detected asset type:[/green] {asset_type.value}"
         )
 
+    # Korean tickers: offer the opt-in KR data sources (off otherwise).
+    from tradingagents.dataflows.kr_utils import is_kr_ticker
+    enable_kr_sources = ask_kr_data_sources() if is_kr_ticker(selected_ticker) else False
+
     # Step 2: Analysis date
     default_date = datetime.datetime.now().strftime("%Y-%m-%d")
     console.print(
@@ -673,6 +677,7 @@ def get_user_selections():
         "openai_reasoning_effort": reasoning_effort,
         "anthropic_effort": anthropic_effort,
         "output_language": output_language,
+        "enable_kr_sources": enable_kr_sources,
     }
 
 
@@ -1006,6 +1011,17 @@ def run_analysis(checkpoint: bool = False):
     config["anthropic_effort"] = selections.get("anthropic_effort")
     config["output_language"] = selections.get("output_language", "English")
     config["checkpoint_enabled"] = checkpoint
+
+    # Opt-in Korean data sources (only offered for KR tickers). Routes news to
+    # Naver and fundamentals to wisereport+OpenDART (both fall back to yfinance
+    # for non-KR / on failure) and enables 종목토론방 retail sentiment.
+    if selections.get("enable_kr_sources"):
+        config["data_vendors"] = {
+            **config["data_vendors"],
+            "news_data": "naver,yfinance",
+            "fundamental_data": "wisereport,yfinance",
+        }
+        config["enable_kr_discussion_sentiment"] = True
 
     # Create stats callback handler for tracking LLM/tool calls
     stats_handler = StatsCallbackHandler()
