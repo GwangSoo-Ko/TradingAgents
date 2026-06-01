@@ -24,6 +24,21 @@ ANALYST_ORDER = [
 CRYPTO_SUFFIXES = ("-USD", "-USDT", "-USDC", "-BTC", "-ETH")
 
 
+def ask_kr_data_sources() -> bool:
+    """Ask whether to enable the opt-in Korean data sources for a KR ticker.
+
+    Only meaningful for .KS/.KQ tickers. When enabled, the run routes news to
+    Naver, fundamentals to wisereport+OpenDART, and turns on 종목토론방 retail
+    sentiment. Off by default (these query undocumented Naver endpoints).
+    """
+    return questionary.confirm(
+        "Korean ticker detected. Enable Korean data sources "
+        "(Naver news, OpenDART+wisereport fundamentals, 종목토론방 sentiment)? "
+        "[needs DART_API_KEY for audited fundamentals]",
+        default=True,
+    ).ask() or False
+
+
 def _build_resolver_llm():
     """Best-effort cheap LLM for ticker-query normalization, from whatever
     provider key is already in the environment.
