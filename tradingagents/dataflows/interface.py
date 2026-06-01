@@ -11,6 +11,7 @@ from .y_finance import (
     get_insider_transactions as get_yfinance_insider_transactions,
 )
 from .yfinance_news import get_news_yfinance, get_global_news_yfinance
+from .naver_news import get_news as get_naver_news
 from .alpha_vantage import (
     get_stock as get_alpha_vantage_stock,
     get_indicator as get_alpha_vantage_indicator,
@@ -64,6 +65,7 @@ TOOLS_CATEGORIES = {
 VENDOR_LIST = [
     "yfinance",
     "alpha_vantage",
+    "naver",  # opt-in: Korean-language per-ticker news for .KS/.KQ (not a default)
 ]
 
 # Mapping of methods to their vendor-specific implementations
@@ -99,6 +101,11 @@ VENDOR_METHODS = {
     "get_news": {
         "alpha_vantage": get_alpha_vantage_news,
         "yfinance": get_news_yfinance,
+        # Opt-in KR-only vendor, listed last so it never auto-runs ahead of the
+        # default chain. Enable for Korean tickers via news_data="naver,yfinance"
+        # (or tool_vendors["get_news"]); it raises for non-KR so the chain falls
+        # through to yfinance unchanged.
+        "naver": get_naver_news,
     },
     "get_global_news": {
         "yfinance": get_global_news_yfinance,
