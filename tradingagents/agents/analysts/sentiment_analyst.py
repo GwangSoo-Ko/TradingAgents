@@ -51,6 +51,26 @@ def _seven_days_back(trade_date: str) -> str:
     return (datetime.strptime(trade_date, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
 
 
+def _maybe_fetch_kr_discussion(ticker: str) -> str:
+    """Fetch Naver 종목토론방 retail sentiment for KR tickers, opt-in only.
+
+    Returns "" (omitted from the prompt) unless the ticker is Korean AND
+    config['enable_kr_discussion_sentiment'] is true. Off by default because it
+    queries an undocumented Naver endpoint; author identities are never
+    included (see naver_discussion).
+    """
+    try:
+        from tradingagents.dataflows.config import get_config
+        from tradingagents.dataflows.kr_utils import is_kr_ticker
+        if not (is_kr_ticker(ticker) and get_config().get("enable_kr_discussion_sentiment")):
+            return ""
+        from tradingagents.dataflows.naver_discussion import fetch_discussion_sentiment
+        return fetch_discussion_sentiment(ticker)
+    except Exception as exc:  # noqa: BLE001 — never block the node
+        logger.warning("KR discussion sentiment skipped for %s: %s", ticker, exc)
+        return ""
+
+
 def _resolve_company_name(ticker: str) -> Optional[str]:
     """Best-effort lookup of a ticker's company name via yfinance.
 
@@ -97,6 +117,10 @@ def create_sentiment_analyst(llm):
         # so we OR the ticker with the yfinance-resolved name to widen recall.
         reddit_block = fetch_reddit_posts(ticker, company_name=_resolve_company_name(ticker))
 
+        # Korean retail sentiment from Naver 종목토론방 — opt-in (off by default),
+        # KR tickers only. StockTwits/Reddit structurally miss Korean retail.
+        kr_discussion_block = _maybe_fetch_kr_discussion(ticker)
+
         system_message = _build_system_message(
             ticker=ticker,
             start_date=start_date,
@@ -104,6 +128,7 @@ def create_sentiment_analyst(llm):
             news_block=news_block,
             stocktwits_block=stocktwits_block,
             reddit_block=reddit_block,
+            kr_discussion_block=kr_discussion_block,
         )
 
         prompt = ChatPromptTemplate.from_messages(
@@ -153,9 +178,24 @@ def _build_system_message(
     news_block: str,
     stocktwits_block: str,
     reddit_block: str,
+    kr_discussion_block: str = "",
 ) -> str:
     """Assemble the sentiment-analyst system message with structured data blocks."""
-    return f"""You are a financial market sentiment analyst. Your task is to produce a comprehensive sentiment report for {ticker} covering the period from {start_date} to {end_date}, drawing on three complementary data sources that have already been collected for you.
+    # Korean 종목토론방 section is only present for KR tickers with the opt-in
+    # flag enabled (otherwise kr_discussion_block is "" and the section is omitted).
+    kr_section = ""
+    if kr_discussion_block:
+        kr_section = f"""
+
+### Naver 종목토론방 — Korean retail discussion board (KR tickers)
+Korean retail chatter that StockTwits/English-Reddit miss. Read the Korean text
+for mood; 추천/비추천 are community reactions to a post, not a bull/bear label.
+
+<start_of_kr_discussion>
+{kr_discussion_block}
+<end_of_kr_discussion>"""
+
+    return f"""You are a financial market sentiment analyst. Your task is to produce a comprehensive sentiment report for {ticker} covering the period from {start_date} to {end_date}, drawing on the complementary data sources that have already been collected for you.
 
 ## Data sources (pre-fetched, in this prompt)
 
@@ -178,7 +218,7 @@ Community discussion. Engagement signal via upvote score and comment count. Subr
 
 <start_of_reddit>
 {reddit_block}
-<end_of_reddit>
+<end_of_reddit>{kr_section}
 
 ## How to analyze this data (best practices)
 
