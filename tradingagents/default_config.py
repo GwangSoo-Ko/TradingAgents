@@ -73,6 +73,11 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # Checkpoint/resume: when True, LangGraph saves state after each node
     # so a crashed run can resume from the last successful step.
     "checkpoint_enabled": False,
+    # Opt-in: include Naver 종목토론방 (Korean retail discussion board) sentiment
+    # for KR (.KS/.KQ) tickers in the sentiment analyst. Off by default — it
+    # queries an undocumented Naver endpoint; author identities are never stored
+    # (see dataflows/naver_discussion.py). Enable for personal/KR-focused use.
+    "enable_kr_discussion_sentiment": False,
     # Output language for analyst reports and final decision
     # Internal agent debate stays in English for reasoning quality
     "output_language": "English",
