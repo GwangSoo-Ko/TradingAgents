@@ -299,19 +299,69 @@ def get_fundamentals(
             ("Free Cash Flow", info.get("freeCashflow")),
         ]
 
+        # Yahoo omits trailing PE/EPS/Price-to-Book/Book Value for many Korean
+        # (.KS/.KQ) listings even when the inputs exist, so the fundamentals
+        # analyst loses every valuation anchor. Derive them from data already on
+        # hand (and the balance sheet for book value). Derived values are tagged
+        # "(derived)" so downstream agents don't treat them as vendor-authoritative.
+        derived: dict[str, float] = {}
+        price = info.get("currentPrice") or info.get("regularMarketPrice")
+        shares = info.get("sharesOutstanding")
+        net_income = info.get("netIncomeToCommon")
+
+        eps = info.get("trailingEps")
+        if eps is None and net_income and shares:
+            eps = net_income / shares
+            derived["EPS (TTM)"] = round(eps, 2)
+        if info.get("trailingPE") is None and price and eps and eps > 0:
+            derived["PE Ratio (TTM)"] = round(price / eps, 2)
+        if info.get("priceToBook") is None or info.get("bookValue") is None:
+            # Book value per share isn't in info for KR tickers; pull equity
+            # from the balance sheet. Only fetched when info lacks PB/bookValue,
+            # so US tickers (which usually have them) skip this extra call.
+            try:
+                bs = yf_retry(lambda: ticker_obj.quarterly_balance_sheet)
+                equity = None
+                for row in ("Stockholders Equity", "Common Stock Equity"):
+                    if row in bs.index:
+                        equity = float(bs.loc[row].iloc[0])
+                        break
+                bvps_shares = shares
+                if "Ordinary Shares Number" in bs.index:
+                    bvps_shares = float(bs.loc["Ordinary Shares Number"].iloc[0]) or shares
+                if equity and bvps_shares:
+                    bvps = equity / bvps_shares
+                    if info.get("bookValue") is None:
+                        derived["Book Value"] = round(bvps, 2)
+                    if info.get("priceToBook") is None and price and bvps > 0:
+                        derived["Price to Book"] = round(price / bvps, 2)
+            except Exception:
+                pass  # balance sheet unavailable -> rendered as "N/A (vendor)" below
+
+        # Labels that anchor valuation; surface them explicitly (vendor value ->
+        # derived -> "N/A (vendor)") instead of silently dropping a None, so the
+        # agent knows the figure is unavailable rather than overlooked.
+        _critical = {"PE Ratio (TTM)", "EPS (TTM)", "Price to Book", "Book Value"}
         lines = []
         for label, value in fields:
             if value is not None:
                 lines.append(f"{label}: {value}")
+            elif label in derived:
+                lines.append(f"{label}: {derived[label]} (derived)")
+            elif label in _critical:
+                lines.append(f"{label}: N/A (vendor)")
 
         # yfinance returns a stub dict (e.g. {"trailingPegRatio": None}) for
         # unknown symbols, so `info` is truthy but every field is empty. Treat
         # "no usable fields" as no data rather than emitting a bare header the
-        # agent might fabricate around.
-        if not lines:
+        # agent might fabricate around. (The N/A criticals alone don't count.)
+        if not any(not ln.endswith("N/A (vendor)") for ln in lines):
             raise NoMarketDataError(ticker, canonical, "no fundamental fields returned")
 
+        currency = info.get("financialCurrency") or info.get("currency")
         header = f"# Company Fundamentals for {canonical}\n"
+        if currency:
+            header += f"# Reporting currency: {currency}\n"
         header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
 
         return header + "\n".join(lines)

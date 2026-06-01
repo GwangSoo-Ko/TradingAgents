@@ -51,6 +51,23 @@ def _extract_article_data(article: dict) -> dict:
         }
 
 
+# When fewer than this many articles fall inside the requested window, surface
+# up to _FALLBACK_N most-recent PRE-window articles for context. This keeps
+# sparse-coverage tickers (e.g. KOSPI/KOSDAQ names on short windows) from
+# returning "No news found" when relevant-but-slightly-older articles exist.
+_MIN_IN_WINDOW = 3
+_FALLBACK_N = 3
+
+
+def _format_article(data: dict) -> str:
+    out = f"### {data['title']} (source: {data['publisher']})\n"
+    if data["summary"]:
+        out += f"{data['summary']}\n"
+    if data["link"]:
+        out += f"Link: {data['link']}\n"
+    return out + "\n"
+
+
 def get_news_yfinance(
     ticker: str,
     start_date: str,
@@ -81,6 +98,7 @@ def get_news_yfinance(
 
         news_str = ""
         filtered_count = 0
+        pre_window = []  # (date, data) for articles OLDER than the window
 
         for article in news:
             data = _extract_article_data(article)
@@ -88,21 +106,36 @@ def get_news_yfinance(
             # Filter by date if publish time is available
             if data["pub_date"]:
                 pub_date_naive = data["pub_date"].replace(tzinfo=None)
-                if not (start_dt <= pub_date_naive <= end_dt + relativedelta(days=1)):
+                if pub_date_naive < start_dt:
+                    # Older than the window — keep as a fallback candidate.
+                    pre_window.append((pub_date_naive, data))
                     continue
+                if pub_date_naive > end_dt + relativedelta(days=1):
+                    continue  # future-dated: drop (never surface — look-ahead safety)
 
-            news_str += f"### {data['title']} (source: {data['publisher']})\n"
-            if data["summary"]:
-                news_str += f"{data['summary']}\n"
-            if data["link"]:
-                news_str += f"Link: {data['link']}\n"
-            news_str += "\n"
+            news_str += _format_article(data)
             filtered_count += 1
 
-        if filtered_count == 0:
+        # Sparse in-window coverage (common for non-US tickers on short windows):
+        # surface the most-recent PRE-window articles, clearly labeled as
+        # predating the window, so the analyst still has grounded context.
+        note = ""
+        if filtered_count < _MIN_IN_WINDOW and pre_window:
+            pre_window.sort(key=lambda x: x[0], reverse=True)
+            extra = pre_window[:_FALLBACK_N]
+            note = (
+                f"\n### Note: only {filtered_count} article(s) within "
+                f"{start_date}..{end_date}; showing {len(extra)} most-recent "
+                f"article(s) from BEFORE the window for context (these predate "
+                f"the analysis window):\n\n"
+            )
+            for _, data in extra:
+                note += _format_article(data)
+
+        if filtered_count == 0 and not note:
             return f"No news found for {ticker} between {start_date} and {end_date}"
 
-        return f"## {ticker} News, from {start_date} to {end_date}:\n\n{news_str}"
+        return f"## {ticker} News, from {start_date} to {end_date}:\n\n{news_str}{note}"
 
     except Exception as e:
         return f"Error fetching news for {ticker}: {str(e)}"
@@ -131,7 +164,11 @@ def get_global_news_yfinance(
         look_back_days = config["global_news_lookback_days"]
     if limit is None:
         limit = config["global_news_article_limit"]
-    search_queries = config["global_news_queries"]
+    # Region-aware macro queries: the run stashes the analysed ticker's region
+    # in config (news_region, set in propagate); fall back to the US/default set.
+    region = config.get("news_region")
+    by_region = config.get("global_news_queries_by_region") or {}
+    search_queries = by_region.get(region) or config["global_news_queries"]
 
     all_news = []
     seen_titles = set()
