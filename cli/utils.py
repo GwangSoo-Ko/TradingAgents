@@ -24,33 +24,92 @@ ANALYST_ORDER = [
 CRYPTO_SUFFIXES = ("-USD", "-USDT", "-USDC", "-BTC", "-ETH")
 
 
-def get_ticker() -> str:
-    """Prompt the user to enter a ticker symbol, preserving exchange suffixes.
+def _build_resolver_llm():
+    """Best-effort cheap LLM for ticker-query normalization, from whatever
+    provider key is already in the environment.
 
-    Uses questionary.text (not typer.prompt, which strips trailing dot-suffixes
-    like ``000404.SH`` on some shells) and validates the symbol charset so an
-    obvious typo is caught before the run starts.
+    The ticker is entered before the user picks a provider, so this opportunistically
+    builds a small client from an available key purely to normalize fuzzy/foreign
+    input (typos, Korean names, descriptions) into search terms. Returns ``None``
+    when no key is present — the resolver then uses grounded search only.
     """
-    ticker = questionary.text(
-        f"Enter ticker symbol (e.g. {TICKER_INPUT_EXAMPLES}):",
-        validate=lambda x: (
-            not x.strip()
-            or (all(ch.isalnum() or ch in "._-^" for ch in x.strip()) and len(x.strip()) <= 32)
-            or "Please enter a valid ticker symbol, e.g. AAPL, 000404.SZ, 0700.HK."
-        ),
-        style=questionary.Style(
-            [
-                ("text", "fg:green"),
-                ("highlighted", "noinherit"),
-            ]
-        ),
+    import os
+    from tradingagents.llm_clients import create_llm_client
+
+    for env_key, provider, model in (
+        ("OPENAI_API_KEY", "openai", "gpt-5.4-mini"),
+        ("GOOGLE_API_KEY", "google", "gemini-2.5-flash"),
+        ("ANTHROPIC_API_KEY", "anthropic", "claude-haiku-4-5"),
+    ):
+        if os.environ.get(env_key):
+            try:
+                return create_llm_client(provider=provider, model=model).get_llm()
+            except Exception:
+                continue
+    return None
+
+
+def get_ticker() -> str:
+    """Prompt for a ticker OR a company name and resolve it to a real ticker.
+
+    Accepts free text (e.g. ``AAPL``, ``Apple``, ``삼성전자``, ``the iphone maker``).
+    Ticker-shaped input that yfinance recognises is used directly; otherwise the
+    hybrid resolver returns grounded candidates (yfinance Search, LLM-assisted for
+    fuzzy/foreign input) and the user picks one — so an imprecise entry never
+    silently analyses the wrong company. Tickers always come from the grounded
+    search, never invented by the LLM.
+    """
+    from tradingagents.dataflows.ticker_resolver import resolve_query, looks_like_ticker
+
+    raw = questionary.text(
+        "Enter a ticker or company name (e.g. AAPL, Apple, 삼성전자, 0700.HK):",
+        validate=lambda x: (not x.strip()) or len(x.strip()) <= 64
+        or "Please keep it under 64 characters.",
+        style=questionary.Style([("text", "fg:green"), ("highlighted", "noinherit")]),
     ).ask()
 
-    if ticker is None:
-        console.print("\n[red]No ticker symbol provided. Exiting...[/red]")
+    if raw is None:
+        console.print("\n[red]No input provided. Exiting...[/red]")
         exit(1)
+    raw = raw.strip()
+    if not raw:
+        return "SPY"
 
-    return normalize_ticker_symbol(ticker) if ticker.strip() else "SPY"
+    try:
+        candidates = resolve_query(raw, llm=_build_resolver_llm())
+    except Exception:
+        candidates = []
+
+    # A single verified direct ticker hit -> use it without a menu.
+    if len(candidates) == 1 and candidates[0].source == "direct":
+        return candidates[0].symbol
+
+    if candidates:
+        choices = [questionary.Choice(c.label(), c.symbol) for c in candidates]
+        choices.append(questionary.Choice("None of these — enter a ticker manually", "__manual__"))
+        chosen = questionary.select(
+            f"Select the instrument for '{raw}':",
+            choices=choices,
+            style=questionary.Style([("selected", "fg:green noinherit"),
+                                     ("highlighted", "fg:green noinherit"),
+                                     ("pointer", "fg:green noinherit")]),
+        ).ask()
+        if chosen and chosen != "__manual__":
+            return chosen
+    elif looks_like_ticker(raw):
+        # Ticker-shaped input the search didn't index — trust the user's symbol.
+        return normalize_ticker_symbol(raw)
+    else:
+        console.print(f"[yellow]No matches found for '{raw}'. Enter the exact ticker symbol.[/yellow]")
+
+    manual = questionary.text(
+        "Enter the exact ticker symbol (e.g. AAPL, 000660.KS, 0700.HK):",
+        validate=lambda x: (not x.strip())
+        or (all(ch.isalnum() or ch in "._-^" for ch in x.strip()) and len(x.strip()) <= 32)
+        or "Please enter a valid ticker symbol.",
+        style=questionary.Style([("text", "fg:green"), ("highlighted", "noinherit")]),
+    ).ask()
+    return normalize_ticker_symbol(manual) if manual and manual.strip() else "SPY"
 
 
 def normalize_ticker_symbol(ticker: str) -> str:
