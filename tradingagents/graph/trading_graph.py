@@ -16,7 +16,7 @@ from langgraph.prebuilt import ToolNode
 from tradingagents.llm_clients import create_llm_client
 
 from tradingagents.agents import *
-from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.default_config import DEFAULT_CONFIG, news_region_for_ticker
 from tradingagents.agents.utils.memory import TradingMemoryLog
 from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.agents.utils.agent_states import (
@@ -324,6 +324,12 @@ class TradingAgentsGraph:
         successful node on a subsequent invocation with the same ticker+date.
         """
         self.ticker = company_name
+
+        # Make macro/global news region-aware: stash this ticker's region so
+        # get_global_news_* selects region-appropriate queries (e.g. Bank of
+        # Korea / KOSPI for .KS/.KQ instead of only Fed / S&P). None = US/default.
+        self.config["news_region"] = news_region_for_ticker(company_name)
+        set_config(self.config)
 
         # Resolve any pending memory-log entries for this ticker before the pipeline runs.
         self._resolve_pending_entries(company_name)

@@ -96,6 +96,20 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "ECB Bank of England BOJ central bank policy",
         "oil commodities supply chain energy",
     ],
+    # Region-specific macro queries, selected by the analysed ticker's exchange
+    # suffix (see news_region_for_ticker). When a ticker maps to a region here,
+    # get_global_news uses these instead of the US/default global_news_queries
+    # so a Korean run gets Bank of Korea / KOSPI / won context, not only Fed/S&P.
+    # Each list keeps one global driver (the Fed) so worldwide macro isn't lost.
+    "global_news_queries_by_region": {
+        "KR": [
+            "Bank of Korea base rate won KRW monetary policy",
+            "KOSPI KOSDAQ Korea stock market",
+            "South Korea exports semiconductor memory chip cycle",
+            "Korea economy trade balance GDP",
+            "Federal Reserve interest rates inflation",
+        ],
+    },
     # Data vendor configuration
     # Category-level configuration (default for all tools in category)
     "data_vendors": {
@@ -130,3 +144,27 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "":     "SPY",         # default for US-listed tickers (no suffix)
     },
 })
+
+
+# Exchange-suffix -> macro-news region key, for selecting region-appropriate
+# global news queries (see global_news_queries_by_region). Mirrors the
+# benchmark_map suffix convention. Tickers with no mapped suffix get the
+# US/default query set (region None).
+_NEWS_REGION_BY_SUFFIX = {
+    ".KS": "KR",
+    ".KQ": "KR",
+}
+
+
+def news_region_for_ticker(ticker: str) -> "str | None":
+    """Map an exchange-qualified ticker to a macro-news region key, or None.
+
+    Used at run start to pick region-appropriate ``global_news_queries`` so a
+    Korean (.KS/.KQ) run gets Bank-of-Korea / KOSPI macro context instead of
+    only US/EU headlines. Returns None for US and unmapped exchanges.
+    """
+    t = (ticker or "").upper()
+    for suffix, region in _NEWS_REGION_BY_SUFFIX.items():
+        if t.endswith(suffix):
+            return region
+    return None
