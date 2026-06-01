@@ -12,6 +12,7 @@ from .y_finance import (
 )
 from .yfinance_news import get_news_yfinance, get_global_news_yfinance
 from .naver_news import get_news as get_naver_news
+from .opendart_fundamentals import get_fundamentals as get_opendart_fundamentals
 from .alpha_vantage import (
     get_stock as get_alpha_vantage_stock,
     get_indicator as get_alpha_vantage_indicator,
@@ -65,7 +66,8 @@ TOOLS_CATEGORIES = {
 VENDOR_LIST = [
     "yfinance",
     "alpha_vantage",
-    "naver",  # opt-in: Korean-language per-ticker news for .KS/.KQ (not a default)
+    "naver",     # opt-in: Korean-language per-ticker news for .KS/.KQ (not a default)
+    "opendart",  # opt-in: FSS-audited KR fundamentals for .KS/.KQ (not a default)
 ]
 
 # Mapping of methods to their vendor-specific implementations
@@ -84,6 +86,10 @@ VENDOR_METHODS = {
     "get_fundamentals": {
         "alpha_vantage": get_alpha_vantage_fundamentals,
         "yfinance": get_yfinance_fundamentals,
+        # Opt-in KR-only, listed last so it never auto-runs ahead of the default
+        # chain. Enable via fundamental_data="opendart,yfinance"; raises for
+        # non-KR tickers so the chain falls through to yfinance unchanged.
+        "opendart": get_opendart_fundamentals,
     },
     "get_balance_sheet": {
         "alpha_vantage": get_alpha_vantage_balance_sheet,
