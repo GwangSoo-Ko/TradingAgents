@@ -88,6 +88,10 @@ def resolve_instrument_identity(ticker: str) -> dict:
         ("industry", "industry"),
         ("exchange", "exchange"),
         ("quoteType", "quote_type"),
+        # Listing currency anchors price/valuation reasoning. Without it the
+        # pipeline (US-equity-first by origin) silently assumes USD and can
+        # misread a KRW figure like 299500 as dollars for non-US tickers.
+        ("currency", "currency"),
     ):
         value = _clean_identity_value(info.get(source_key))
         if value:
@@ -129,6 +133,10 @@ def build_instrument_context(
             details.append(f"Industry: {industry}")
         if identity.get("exchange"):
             details.append(f"Exchange: {identity['exchange']}")
+        if identity.get("currency"):
+            details.append(
+                f"Prices and financials are quoted in {identity['currency']}"
+            )
 
     if details:
         context += (

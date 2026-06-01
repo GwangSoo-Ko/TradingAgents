@@ -26,6 +26,12 @@ logger = logging.getLogger(__name__)
 _API = "https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
 _UA = "tradingagents/0.2 (+https://github.com/TauricResearch/TradingAgents)"
 
+# Non-US exchange suffixes StockTwits does not cover. A symbol carrying one of
+# these 404s on the US cashtag endpoint, so skip the call and say so plainly.
+_NON_US_SUFFIXES = frozenset(
+    {"KS", "KQ", "T", "HK", "L", "TO", "AX", "SS", "SZ", "NS", "BO"}
+)
+
 
 def fetch_stocktwits_messages(ticker: str, limit: int = 30, timeout: float = 10.0) -> str:
     """Fetch recent StockTwits messages for ``ticker`` and return them as a
@@ -34,13 +40,27 @@ def fetch_stocktwits_messages(ticker: str, limit: int = 30, timeout: float = 10.
     Returns a placeholder string when the endpoint is unreachable, the
     symbol has no messages, or the response shape is unexpected — the
     caller never has to special-case None or exceptions.
+
+    StockTwits is a US cashtag service, so non-US exchange-suffixed tickers
+    (e.g. ``005930.KS``) and bare numeric codes (``005930``) are short-circuited:
+    the suffixed form 404s, and — more dangerously — a bare numeric code is
+    silently resolved by StockTwits to an *internal symbol id* (``005930`` →
+    id 5930 → ``IWM``), which would inject unrelated US-market data. We refuse
+    both rather than return wrong-market sentiment.
     """
-    url = _API.format(ticker=ticker.upper())
+    sym = ticker.upper()
+    base, _, suffix = sym.partition(".")
+    if suffix and suffix in _NON_US_SUFFIXES:
+        return f"<StockTwits has no coverage for non-US ticker {sym}>"
+    if base.isdigit():
+        return f"<StockTwits has no coverage for numeric-code ticker {sym}>"
+
+    url = _API.format(ticker=sym)
     req = Request(url, headers={"User-Agent": _UA, "Accept": "application/json"})
     try:
         with urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read())
-    except (HTTPError, URLError, json.JSONDecodeError, TimeoutError) as exc:
+    except (HTTPError, URLError, json.JSONDecodeError, TimeoutError, UnicodeEncodeError, ValueError) as exc:
         logger.warning("StockTwits fetch failed for %s: %s", ticker, exc)
         return f"<stocktwits unavailable: {type(exc).__name__}>"
 

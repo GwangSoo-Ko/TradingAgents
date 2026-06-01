@@ -573,6 +573,16 @@ class TestDeferredReflection:
         assert TradingAgentsGraph._resolve_benchmark(mock_graph, "600519.SS") == "000001.SS"
         assert TradingAgentsGraph._resolve_benchmark(mock_graph, "000001.SZ") == "399001.SZ"
 
+    def test_resolve_benchmark_korea(self):
+        """KOSPI (.KS) / KOSDAQ (.KQ) tickers route to their local composite
+        instead of falling back to SPY (uses the real default benchmark_map)."""
+        from tradingagents.default_config import DEFAULT_CONFIG
+        mock_graph = MagicMock(spec=TradingAgentsGraph)
+        mock_graph.config = {"benchmark_ticker": None,
+                             "benchmark_map": DEFAULT_CONFIG["benchmark_map"]}
+        assert TradingAgentsGraph._resolve_benchmark(mock_graph, "005930.KS") == "^KS11"
+        assert TradingAgentsGraph._resolve_benchmark(mock_graph, "247540.KQ") == "^KQ11"
+
     def test_resolve_benchmark_us_ticker_defaults_to_spy(self):
         """US tickers (no dotted suffix) take the empty-suffix entry."""
         mock_graph = MagicMock(spec=TradingAgentsGraph)
