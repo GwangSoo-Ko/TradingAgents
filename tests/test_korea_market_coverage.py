@@ -70,6 +70,33 @@ class TestCurrencyAnchor:
 
 
 @pytest.mark.unit
+class TestNameTickerDisplay:
+    """Reports should read 'Company Name (TICKER)' rather than a bare ticker."""
+
+    def test_prompt_instructs_name_ticker_form(self):
+        ctx = build_instrument_context(
+            "005930.KS", identity={"company_name": "Samsung Electronics Co., Ltd."}
+        )
+        assert 'Samsung Electronics Co., Ltd. (005930.KS)' in ctx
+        # still keep the exact ticker for tool calls / FINAL line
+        assert "exact ticker" in ctx
+
+    def test_no_name_no_display_instruction(self):
+        # Without a resolved name, no name(ticker) instruction is emitted.
+        ctx = build_instrument_context("ZZZZ")
+        assert "report headings and prose" not in ctx
+
+    def test_display_label(self):
+        import tradingagents.agents.utils.agent_utils as au
+        from unittest.mock import patch
+        with patch.object(au, "resolve_instrument_identity",
+                          return_value={"company_name": "Apple Inc."}):
+            assert au.instrument_display_label("AAPL") == "Apple Inc. (AAPL)"
+        with patch.object(au, "resolve_instrument_identity", return_value={}):
+            assert au.instrument_display_label("ZZZZ") == "ZZZZ"
+
+
+@pytest.mark.unit
 class TestNewsRegion:
     """Tier-1 Fix #1: macro-news region selection by exchange suffix."""
 

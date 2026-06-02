@@ -784,8 +784,9 @@ def save_report_to_disk(final_state, ticker: str, save_path: Path):
             (portfolio_dir / "decision.md").write_text(risk["judge_decision"], encoding="utf-8")
             sections.append(f"## V. Portfolio Manager Decision\n\n### Portfolio Manager\n{risk['judge_decision']}")
 
-    # Write consolidated report
-    header = f"# Trading Analysis Report: {ticker}\n\nGenerated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    # Write consolidated report — title as "Company Name (TICKER)" for readability.
+    from tradingagents.agents.utils.agent_utils import instrument_display_label
+    header = f"# Trading Analysis Report: {instrument_display_label(ticker)}\n\nGenerated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
     (save_path / "complete_report.md").write_text(header + "\n\n".join(sections), encoding="utf-8")
     return save_path / "complete_report.md"
 
@@ -1123,9 +1124,10 @@ def run_analysis(checkpoint: bool = False):
         analyst_wall_time_tracker.mark_started(selected_analyst_keys[0])
         update_display(layout, stats_handler=stats_handler, start_time=start_time)
 
-        # Create spinner text
+        # Create spinner text — show "Company Name (TICKER)" for readability.
+        from tradingagents.agents.utils.agent_utils import instrument_display_label
         spinner_text = (
-            f"Analyzing {selections['ticker']} on {selections['analysis_date']}..."
+            f"Analyzing {instrument_display_label(selections['ticker'])} on {selections['analysis_date']}..."
         )
         update_display(layout, spinner_text, stats_handler=stats_handler, start_time=start_time)
 
