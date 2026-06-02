@@ -99,6 +99,15 @@ def resolve_instrument_identity(ticker: str) -> dict:
     return identity
 
 
+def instrument_display_label(ticker: str) -> str:
+    """Return ``'Company Name (TICKER)'`` for display, or the bare ticker when
+    no company name resolves. Uses the lru_cached identity lookup, so during a
+    run (after the identity is resolved) this is a free cache hit.
+    """
+    name = (resolve_instrument_identity(ticker) or {}).get("company_name")
+    return f"{name} ({ticker})" if name else ticker
+
+
 def build_instrument_context(
     ticker: str,
     asset_type: str = "stock",
@@ -120,8 +129,10 @@ def build_instrument_context(
     )
 
     details = []
+    resolved_name = None
     if identity:
-        name = identity.get("company_name") or identity.get("name")
+        resolved_name = identity.get("company_name") or identity.get("name")
+        name = resolved_name
         if name:
             details.append(f"{'Name' if is_crypto else 'Company'}: {name}")
         sector, industry = identity.get("sector"), identity.get("industry")
@@ -144,6 +155,16 @@ def build_instrument_context(
             "Do not substitute a different company or ticker unless a tool "
             "result explicitly disproves this resolved identity."
         )
+        if resolved_name:
+            # Make reports readable: name the instrument as "Company Name (TICKER)"
+            # in headings and prose, while still using the exact TICKER in tool
+            # calls and the FINAL TRANSACTION PROPOSAL line.
+            context += (
+                f" When naming the {instrument_label} in your report headings and "
+                f"prose, write it as \"{resolved_name} ({ticker})\" rather than the "
+                "bare ticker; keep using the exact ticker in tool calls and any "
+                "FINAL TRANSACTION PROPOSAL line."
+            )
 
     if is_crypto:
         context += (
