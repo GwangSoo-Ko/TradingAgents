@@ -82,6 +82,33 @@ Render helpers (`render_research_plan`, `render_trader_proposal`, `render_portfo
 
 Provider-specific thinking config lives in `_get_provider_kwargs()` in `trading_graph.py`: `google_thinking_level`, `openai_reasoning_effort`, `anthropic_effort`. Model catalog (CLI options + validation source of truth) is `llm_clients/model_catalog.py`.
 
+### Multi-model debate via Vertex Model Garden (v0.2.6)
+
+`role_models` (config; default `None` = current quick/deep tier behavior) maps a
+graph role to its own `{"provider","model"[,"location",...]}`. The resolver lives
+in `trading_graph.py` (`_llm_for(role)` + client dedup keyed on
+`(provider, model, location, kwargs)`); `GraphSetup` calls `llm_for(role)` per node
+(node factory signatures unchanged). `DEEP_ROLES = {research_manager,
+portfolio_manager}`; all other roles default to the quick tier.
+
+Three Vertex providers (`tradingagents/llm_clients/vertex_clients.py`, lazy SDK
+imports): `vertex_gemini` (`ChatVertexAI`), `vertex_anthropic`
+(`ChatAnthropicVertex`, uses `model_name=`), `vertex_grok` (`ChatOpenAI` against the
+Vertex `endpoints/openapi` URL with a Google OAuth token as `api_key`). Auth is
+Google ADC/service-account — **no vendor API key** (`vertex_auth.py`). Install the
+optional deps with `pip install -e ".[vertex]"`.
+
+Enable from the CLI by picking **"Vertex Model Garden (multi-model debate)"** as the
+provider; it applies `cli/presets.py:VERTEX_DEBATE_PRESET` (judges=Claude, debaters
+diversified across Gemini/Claude/Grok, analysts+trader=Gemini) and prompts for the
+GCP project + location. Required env: `GOOGLE_CLOUD_PROJECT` (e.g. `tpmn-dev`),
+optional `GOOGLE_CLOUD_LOCATION` (default `global`), and ADC via
+`gcloud auth application-default login` (or `GOOGLE_APPLICATION_CREDENTIALS`). It also
+works non-interactively via `TRADINGAGENTS_LLM_PROVIDER=vertex_model_garden` +
+`GOOGLE_CLOUD_PROJECT`. v1 forwards a minimal kwarg set to the Vertex clients;
+thinking-config plumbing is deferred. Don't remove the vendor-direct providers —
+they stay for single-model runs.
+
 ### Data vendor abstraction (`tradingagents/dataflows/`)
 
 Tools route to vendors through two-level config:

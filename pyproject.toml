@@ -32,6 +32,15 @@ dependencies = [
     "yfinance>=1.4.1",
 ]
 
+[project.optional-dependencies]
+# Vertex AI Model Garden multi-model debate (Gemini/Claude/Grok via Vertex).
+# Lazy-imported, so the base install and the test suite do not need these.
+# Version floors are conservative; bump if your GCP/SDK requires newer.
+vertex = [
+    "langchain-google-vertexai>=2.0.0",
+    "anthropic[vertex]>=0.40.0",
+]
+
 [project.scripts]
 tradingagents = "cli.main:app"
 
