@@ -36,3 +36,32 @@ def get_stock(
     response = _make_api_request("TIME_SERIES_DAILY_ADJUSTED", params)
 
     return _filter_csv_by_date_range(response, start_date, end_date)
+
+
+def get_latest_close_on_or_before(symbol: str, on_or_before: str):
+    """Latest daily close on or before ``on_or_before`` from Alpha Vantage.
+
+    Uses TIME_SERIES_DAILY (compact, free tier) and filters out rows after
+    ``on_or_before``, so it is look-ahead-safe for historical analysis dates too.
+    Returns ``(date_str 'YYYY-MM-DD', close float)`` or ``None`` when no usable
+    row is available. Raises ``AlphaVantageNotConfiguredError`` when no API key is
+    set (callers treat that as "cross-check unavailable").
+    """
+    import pandas as pd
+    from io import StringIO
+
+    params = {"symbol": symbol, "outputsize": "compact", "datatype": "csv"}
+    csv_data = _make_api_request("TIME_SERIES_DAILY", params)
+    if not csv_data or not str(csv_data).strip():
+        return None
+    df = pd.read_csv(StringIO(csv_data))
+    if df.empty or "close" not in df.columns:
+        return None
+    date_col = df.columns[0]
+    df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+    df = df.dropna(subset=[date_col])
+    df = df[df[date_col] <= pd.to_datetime(on_or_before)].sort_values(date_col)
+    if df.empty:
+        return None
+    last = df.iloc[-1]
+    return last[date_col].strftime("%Y-%m-%d"), float(last["close"])

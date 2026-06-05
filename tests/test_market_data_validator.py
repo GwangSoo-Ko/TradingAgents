@@ -21,6 +21,17 @@ def _sample_ohlcv() -> pd.DataFrame:
     })
 
 
+@pytest.fixture(autouse=True)
+def _no_av_crosscheck(monkeypatch):
+    """Keep these base-snapshot tests hermetic: stub the Alpha Vantage latest-price
+    cross-check so build_verified_market_snapshot makes no network call (the
+    cross-check has its own coverage in tests/test_latest_price_crosscheck.py)."""
+    monkeypatch.setattr(
+        "tradingagents.dataflows.alpha_vantage_stock.get_latest_close_on_or_before",
+        lambda *a, **k: None,
+    )
+
+
 @pytest.mark.unit
 class TestVerifiedSnapshot:
     def test_excludes_future_rows(self, monkeypatch):
