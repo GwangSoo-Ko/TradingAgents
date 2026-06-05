@@ -68,3 +68,55 @@ class TestApplyVertexConfig:
             "enable_vertex_multimodel": True, "vertex_project": "p", "vertex_location": None,
         })
         assert cfg["vertex_location"] == "global"
+
+
+@pytest.mark.unit
+class TestVertexSingleModel:
+    def test_table_has_claude_and_grok_single_options(self):
+        from cli.utils import _llm_provider_table, provider_default_url
+        keys = {pk for _, pk, _ in _llm_provider_table()}
+        assert "vertex_anthropic" in keys and "vertex_grok" in keys
+        assert provider_default_url("vertex_anthropic") is None
+        assert provider_default_url("vertex_grok") is None
+
+    def test_registry_models(self):
+        from cli.presets import VERTEX_SINGLE_MODELS
+        assert VERTEX_SINGLE_MODELS["vertex_anthropic"] == "claude-opus-4-8"
+        assert VERTEX_SINGLE_MODELS["vertex_grok"] == "xai/grok-4.3"
+
+    def test_apply_noop_when_not_selected(self):
+        from cli.presets import apply_vertex_single_model_config
+        cfg = {"llm_provider": "openai", "role_models": None}
+        apply_vertex_single_model_config(cfg, {"vertex_single_provider": None})
+        assert cfg["llm_provider"] == "openai"
+        assert cfg["role_models"] is None
+
+    def test_apply_claude_single(self):
+        from cli.presets import apply_vertex_single_model_config
+        cfg = {}
+        apply_vertex_single_model_config(cfg, {
+            "vertex_single_provider": "vertex_anthropic",
+            "vertex_project": "tpmn-dev", "vertex_location": None,
+        })
+        assert cfg["llm_provider"] == "vertex_anthropic"
+        assert cfg["quick_think_llm"] == "claude-opus-4-8"
+        assert cfg["deep_think_llm"] == "claude-opus-4-8"
+        assert cfg["role_models"] is None
+        assert cfg["vertex_project"] == "tpmn-dev"
+        assert cfg["vertex_location"] == "global"
+
+    def test_apply_grok_single(self):
+        from cli.presets import apply_vertex_single_model_config
+        cfg = {}
+        apply_vertex_single_model_config(cfg, {
+            "vertex_single_provider": "vertex_grok",
+            "vertex_project": "p", "vertex_location": "global",
+        })
+        assert cfg["llm_provider"] == "vertex_grok"
+        assert cfg["quick_think_llm"] == "xai/grok-4.3"
+        assert cfg["deep_think_llm"] == "xai/grok-4.3"
+
+    def test_multimodel_preset_uses_grok_4_3(self):
+        from cli.presets import VERTEX_DEBATE_PRESET
+        assert VERTEX_DEBATE_PRESET["bear_researcher"]["model"] == "xai/grok-4.3"
+        assert VERTEX_DEBATE_PRESET["aggressive_debator"]["model"] == "xai/grok-4.3"

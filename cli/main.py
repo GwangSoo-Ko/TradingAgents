@@ -33,7 +33,11 @@ from cli.models import AnalystType
 from cli.utils import *
 from cli.announcements import fetch_announcements, display_announcements
 from cli.stats_handler import StatsCallbackHandler
-from cli.presets import apply_vertex_multimodel_config
+from cli.presets import (
+    apply_vertex_multimodel_config,
+    apply_vertex_single_model_config,
+    VERTEX_SINGLE_MODELS,
+)
 from cli.report_meta import analysis_mode_tag
 
 console = Console()
@@ -575,6 +579,7 @@ def get_user_selections():
     # otherwise the provider's default endpoint — the same value the menu
     # would have picked.
     is_vertex_multimodel = False
+    vertex_single_provider = None
     vertex_project = None
     vertex_location = None
     provider_from_env = bool(os.environ.get("TRADINGAGENTS_LLM_PROVIDER"))
@@ -601,6 +606,23 @@ def get_user_selections():
                 raise typer.Exit(1)
             console.print(
                 "[green]✓ Vertex multi-model debate preset (from environment).[/green]"
+            )
+
+        # Single-model Vertex providers (Claude / Grok) selected via env: read
+        # project/location from the environment so the run stays non-interactive.
+        if selected_llm_provider in VERTEX_SINGLE_MODELS:
+            vertex_single_provider = selected_llm_provider
+            vertex_project = os.environ.get("GOOGLE_CLOUD_PROJECT")
+            vertex_location = os.environ.get("GOOGLE_CLOUD_LOCATION") or "global"
+            if not vertex_project:
+                console.print(
+                    "[red]Vertex single-model runs require GOOGLE_CLOUD_PROJECT to be "
+                    "set when selected via TRADINGAGENTS_LLM_PROVIDER.[/red]"
+                )
+                raise typer.Exit(1)
+            console.print(
+                f"[green]✓ Single-model Vertex run: {selected_llm_provider} "
+                f"/ {VERTEX_SINGLE_MODELS[selected_llm_provider]} (from environment).[/green]"
             )
     else:
         console.print(
@@ -640,6 +662,22 @@ def get_user_selections():
                 "expensive than a single model — debate rounds multiply the cost.[/yellow]"
             )
 
+        # Single-model Vertex providers (Claude / Grok) — fixed model, ADC auth,
+        # no vendor API key needed. Collect project/location like the multi-model path.
+        if selected_llm_provider in VERTEX_SINGLE_MODELS:
+            vertex_single_provider = selected_llm_provider
+            console.print(
+                create_question_box(
+                    "Vertex AI Configuration",
+                    "GCP project + location for Model Garden (ADC auth, no API key)",
+                )
+            )
+            vertex_project, vertex_location = ask_vertex_config()
+            console.print(
+                f"[green]✓ Single-model run on Vertex: {selected_llm_provider} "
+                f"/ {VERTEX_SINGLE_MODELS[selected_llm_provider]}[/green]"
+            )
+
         # Confirm the provider's API key is present; prompt the user to paste
         # one and persist it to .env if it's missing, so the analysis run
         # doesn't fail later at the first API call.
@@ -652,6 +690,13 @@ def get_user_selections():
         console.print(
             "[green]✓ Vertex multi-model debate preset selected "
             "(per-role models applied; analysts/trader default to Gemini).[/green]"
+        )
+    elif vertex_single_provider:
+        fixed_model = VERTEX_SINGLE_MODELS[vertex_single_provider]
+        selected_shallow_thinker = fixed_model
+        selected_deep_thinker = fixed_model
+        console.print(
+            f"[green]✓ Single-model Vertex run: {vertex_single_provider} / {fixed_model}.[/green]"
         )
     elif os.environ.get("TRADINGAGENTS_QUICK_THINK_LLM") or os.environ.get("TRADINGAGENTS_DEEP_THINK_LLM"):
         selected_shallow_thinker = DEFAULT_CONFIG["quick_think_llm"]
@@ -723,6 +768,7 @@ def get_user_selections():
         "output_language": output_language,
         "enable_kr_sources": enable_kr_sources,
         "enable_vertex_multimodel": is_vertex_multimodel,
+        "vertex_single_provider": vertex_single_provider,
         "vertex_project": vertex_project,
         "vertex_location": vertex_location,
     }
@@ -1066,8 +1112,10 @@ def run_analysis(checkpoint: bool = False):
     config["output_language"] = selections.get("output_language", "English")
     config["checkpoint_enabled"] = checkpoint
 
-    # Vertex multi-model debate preset (no-op unless that provider was selected).
+    # Vertex presets (each a no-op unless its provider was selected): multi-model
+    # debate, or a single Vertex-hosted model (Claude / Grok) with no vendor key.
     apply_vertex_multimodel_config(config, selections)
+    apply_vertex_single_model_config(config, selections)
 
     # Opt-in Korean data sources (only offered for KR tickers). Routes news to
     # Naver and fundamentals to wisereport+OpenDART (both fall back to yfinance

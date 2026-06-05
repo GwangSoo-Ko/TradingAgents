@@ -59,6 +59,74 @@ def _fmt(value) -> str:
     return str(value)
 
 
+def _pct_diff(a: float, b: float) -> float:
+    return abs(a - b) / abs(b) * 100.0 if b else 0.0
+
+
+def _latest_price_crosscheck(symbol: str, curr_date: str, yf_date: str, yf_close) -> str:
+    """Best-effort latest-close cross-check against Alpha Vantage.
+
+    Returns a markdown section, or '' when unavailable (cross-check disabled, no
+    API key, rate-limited, network/parse error, or the verified close is not
+    numeric). NEVER raises — verification must not be blocked by a second vendor.
+    Look-ahead safety is delegated to the Alpha Vantage fetch, which only returns
+    closes on or before ``curr_date``.
+    """
+    from tradingagents.dataflows.config import get_config
+
+    if not get_config().get("enable_alpha_vantage_price_crosscheck", True):
+        return ""
+    try:
+        yf_close_f = float(yf_close)
+    except (TypeError, ValueError):
+        return ""
+    try:
+        from tradingagents.dataflows.alpha_vantage_stock import (
+            get_latest_close_on_or_before,
+        )
+        result = get_latest_close_on_or_before(symbol, curr_date)
+    except Exception:  # noqa: BLE001 — fail open; the cross-check is best-effort
+        return ""
+    if not result:
+        return ""
+    av_date, av_close = result
+
+    header = ["", "### Latest-price cross-check (Alpha Vantage)", ""]
+    if av_date > yf_date:
+        body = [
+            "⚠️ The primary feed's latest close may be STALE — Alpha Vantage has a "
+            "more recent close on or before the analysis date:",
+            "",
+            "| Source | Latest date | Close |",
+            "|---|---|---:|",
+            f"| yfinance (primary) | {yf_date} | {yf_close_f:.2f} |",
+            f"| Alpha Vantage (cross-check) | {av_date} | {av_close:.2f} |",
+            "",
+            f"Treat **{av_close:.2f} ({av_date})** as the most recent close; the "
+            "primary feed appears to be lagging the latest session.",
+        ]
+    elif av_date < yf_date:
+        body = [
+            f"Note: Alpha Vantage's latest available close ({av_date}, "
+            f"{av_close:.2f}) is older than the primary feed ({yf_date}, "
+            f"{yf_close_f:.2f}); using the primary feed.",
+        ]
+    else:
+        pct = _pct_diff(av_close, yf_close_f)
+        if pct <= 0.5:
+            body = [
+                f"✓ Latest close confirmed by Alpha Vantage: {yf_close_f:.2f} on "
+                f"{yf_date} (Δ {pct:.2f}%)."
+            ]
+        else:
+            body = [
+                f"⚠️ Vendor discrepancy on {yf_date}: yfinance {yf_close_f:.2f} vs "
+                f"Alpha Vantage {av_close:.2f} (Δ {pct:.2f}%). Verify before relying "
+                "on the exact level.",
+            ]
+    return "\n".join(header + body)
+
+
 def build_verified_market_snapshot(
     symbol: str,
     curr_date: str,
@@ -110,6 +178,10 @@ def build_verified_market_snapshot(
               "| Date | Close |", "|---|---:|"]
     for _, row in recent.iterrows():
         lines.append(f"| {_fmt(row['Date'])} | {_fmt(row.get('Close'))} |")
+
+    crosscheck = _latest_price_crosscheck(symbol, curr_date, latest_date, latest.get("Close"))
+    if crosscheck:
+        lines.append(crosscheck)
 
     lines += [
         "",

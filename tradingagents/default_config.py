@@ -18,6 +18,7 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_CHECKPOINT_ENABLED":   "checkpoint_enabled",
     "TRADINGAGENTS_BENCHMARK_TICKER":     "benchmark_ticker",
     "TRADINGAGENTS_TEMPERATURE":          "temperature",
+    "TRADINGAGENTS_AV_PRICE_CROSSCHECK":  "enable_alpha_vantage_price_crosscheck",
 }
 
 
@@ -88,6 +89,11 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # queries an undocumented Naver endpoint; author identities are never stored
     # (see dataflows/naver_discussion.py). Enable for personal/KR-focused use.
     "enable_kr_discussion_sentiment": False,
+    # Cross-check the latest close against Alpha Vantage in the verified market
+    # snapshot (best-effort; requires ALPHA_VANTAGE_API_KEY). Surfaces when the
+    # primary feed (yfinance) is lagging the most recent session's close. No-op
+    # without a key. Disable via TRADINGAGENTS_AV_PRICE_CROSSCHECK=false.
+    "enable_alpha_vantage_price_crosscheck": True,
     # Output language for analyst reports and final decision
     # Internal agent debate stays in English for reasoning quality
     "output_language": "English",

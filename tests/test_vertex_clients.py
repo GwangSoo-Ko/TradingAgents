@@ -125,9 +125,9 @@ class TestVertexClients:
         )
         from tradingagents.llm_clients.vertex_clients import VertexGrokClient
         llm = VertexGrokClient(
-            "xai/grok-4.20-reasoning", project="tpmn-dev", location="global"
+            "xai/grok-4.3", project="tpmn-dev", location="global"
         ).get_llm()
-        assert llm.model_name == "xai/grok-4.20-reasoning"
+        assert llm.model_name == "xai/grok-4.3"
         base = str(llm.openai_api_base)
         assert "endpoints/openapi" in base
         assert base.startswith("https://aiplatform.googleapis.com/")  # global host
@@ -157,7 +157,7 @@ class TestVertexClients:
             VertexAnthropicClient,
         )
         assert isinstance(
-            create_llm_client("vertex_grok", "xai/grok-4.20-reasoning", project="p"),
+            create_llm_client("vertex_grok", "xai/grok-4.3", project="p"),
             VertexGrokClient,
         )
 

@@ -109,6 +109,17 @@ works non-interactively via `TRADINGAGENTS_LLM_PROVIDER=vertex_model_garden` +
 thinking-config plumbing is deferred. Don't remove the vendor-direct providers —
 they stay for single-model runs.
 
+For users without an Anthropic/xAI API key, two CLI options run the **whole
+pipeline on a single Vertex-hosted model** (no vendor key, ADC auth): **"Vertex
+Model Garden — Claude (claude-opus-4-8)"** and **"Vertex Model Garden — Grok
+(xai/grok-4.3)"**. Their provider key IS the real `vertex_anthropic` /
+`vertex_grok` client key; `cli/presets.py:VERTEX_SINGLE_MODELS` maps it to the
+fixed model and `apply_vertex_single_model_config` sets `llm_provider` +
+quick/deep think models + project/location with `role_models` unset (the normal
+single-model path). They also work non-interactively via
+`TRADINGAGENTS_LLM_PROVIDER=vertex_anthropic|vertex_grok` + `GOOGLE_CLOUD_PROJECT`.
+The multi-model preset's Grok role also uses `xai/grok-4.3`.
+
 ### Data vendor abstraction (`tradingagents/dataflows/`)
 
 Tools route to vendors through two-level config:
@@ -116,6 +127,8 @@ Tools route to vendors through two-level config:
 - `tool_vendors` — per-tool override
 
 Currently `yfinance` and `alpha_vantage`. Tools are created in `agents/utils/agent_utils.py` (re-exporting from `core_stock_tools.py`, `technical_indicators_tools.py`, `fundamental_data_tools.py`, `news_data_tools.py`) and grouped into `ToolNode`s by analyst type in `_create_tool_nodes()`.
+
+**Latest-close cross-check (verified snapshot).** `dataflows/market_data_validator.py:build_verified_market_snapshot` (the `get_verified_market_snapshot` tool) cross-checks the primary feed's latest close against Alpha Vantage (`alpha_vantage_stock.get_latest_close_on_or_before`, `TIME_SERIES_DAILY` compact, filtered `<= curr_date` so it stays look-ahead-safe). When Alpha Vantage has a more recent close than yfinance — the common case where yfinance lags the latest session (returns a NaN/missing last close) — the snapshot flags the primary feed as STALE and surfaces the newer close. Best-effort: gated by `enable_alpha_vantage_price_crosscheck` (default True; env `TRADINGAGENTS_AV_PRICE_CROSSCHECK`), needs `ALPHA_VANTAGE_API_KEY`, and returns nothing (no behavior change) without a key or on any error. yfinance stays the primary vendor — this only adds a one-call verification, not a vendor switch.
 
 ### Persistence
 
