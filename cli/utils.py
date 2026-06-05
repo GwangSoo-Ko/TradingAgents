@@ -356,6 +356,8 @@ def _llm_provider_table() -> list[tuple[str, str, str | None]]:
         ("OpenAI", "openai", "https://api.openai.com/v1"),
         ("Google", "google", None),
         ("Vertex Model Garden (multi-model debate)", "vertex_model_garden", None),
+        ("Vertex Model Garden — Claude (claude-opus-4-8)", "vertex_anthropic", None),
+        ("Vertex Model Garden — Grok (xai/grok-4.3)", "vertex_grok", None),
         ("Anthropic", "anthropic", "https://api.anthropic.com/"),
         ("xAI", "xai", "https://api.x.ai/v1"),
         ("DeepSeek", "deepseek", "https://api.deepseek.com"),

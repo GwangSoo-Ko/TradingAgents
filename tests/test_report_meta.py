@@ -26,7 +26,7 @@ class TestAnalysisModeTag:
     def test_mixed_multimodel(self):
         cfg = {"role_models": {
             "bull_researcher": {"provider": "openai", "model": "gpt-5.5"},
-            "bear_researcher": {"provider": "vertex_grok", "model": "xai/grok-4.20-reasoning"},
+            "bear_researcher": {"provider": "vertex_grok", "model": "xai/grok-4.3"},
         }}
         assert analysis_mode_tag(cfg) == "multimodel"
 
