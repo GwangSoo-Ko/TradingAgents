@@ -34,6 +34,7 @@ from cli.utils import *
 from cli.announcements import fetch_announcements, display_announcements
 from cli.stats_handler import StatsCallbackHandler
 from cli.presets import apply_vertex_multimodel_config
+from cli.report_meta import analysis_mode_tag
 
 console = Console()
 
@@ -746,7 +747,7 @@ def get_analysis_date():
             )
 
 
-def save_report_to_disk(final_state, ticker: str, save_path: Path):
+def save_report_to_disk(final_state, ticker: str, save_path: Path, config: dict | None = None):
     """Save complete analysis report to disk with organized subfolders."""
     save_path.mkdir(parents=True, exist_ok=True)
     sections = []
@@ -832,7 +833,13 @@ def save_report_to_disk(final_state, ticker: str, save_path: Path):
 
     # Write consolidated report — title as "Company Name (TICKER)" for readability.
     from tradingagents.agents.utils.agent_utils import instrument_display_label
-    header = f"# Trading Analysis Report: {instrument_display_label(ticker)}\n\nGenerated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    from cli.report_meta import analysis_config_block
+    config_block = analysis_config_block(config) if config else ""
+    header = (
+        f"# Trading Analysis Report: {instrument_display_label(ticker)}\n\n"
+        f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        f"{config_block}"
+    )
     (save_path / "complete_report.md").write_text(header + "\n\n".join(sections), encoding="utf-8")
     return save_path / "complete_report.md"
 
@@ -1333,14 +1340,15 @@ def run_analysis(checkpoint: bool = False):
     save_choice = typer.prompt("Save report?", default="Y").strip().upper()
     if save_choice in ("Y", "YES", ""):
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        default_path = Path.cwd() / "reports" / f"{selections['ticker']}_{timestamp}"
+        mode_tag = analysis_mode_tag(config)
+        default_path = Path.cwd() / "reports" / f"{selections['ticker']}_{timestamp}_{mode_tag}"
         save_path_str = typer.prompt(
             "Save path (press Enter for default)",
             default=str(default_path)
         ).strip()
         save_path = Path(save_path_str)
         try:
-            report_file = save_report_to_disk(final_state, selections["ticker"], save_path)
+            report_file = save_report_to_disk(final_state, selections["ticker"], save_path, config)
             console.print(f"\n[green]✓ Report saved to:[/green] {save_path.resolve()}")
             console.print(f"  [dim]Complete report:[/dim] {report_file.name}")
         except Exception as e:
