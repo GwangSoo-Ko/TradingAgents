@@ -54,11 +54,12 @@ Three models, exact Vertex Model Garden IDs (provided by the user):
 ```python
 VERTEX_DEBATE_PRESET = {
     # debaters — diversified (all three families appear; bull↔bear and the
-    # risk trio are each on different models). Grok is served on the Vertex
-    # `global` endpoint, so its entries pin location explicitly.
+    # risk trio are each on different models). All three families run on the
+    # Vertex `global` endpoint (run-level vertex_location="global"), so no
+    # per-model location override is needed.
     "bull_researcher":      {"provider": "vertex_gemini",    "model": "gemini-3.5-flash"},
-    "bear_researcher":      {"provider": "vertex_grok",      "model": "xai/grok-4.20-reasoning", "location": "global"},
-    "aggressive_debator":   {"provider": "vertex_grok",      "model": "xai/grok-4.20-reasoning", "location": "global"},
+    "bear_researcher":      {"provider": "vertex_grok",      "model": "xai/grok-4.20-reasoning"},
+    "aggressive_debator":   {"provider": "vertex_grok",      "model": "xai/grok-4.20-reasoning"},
     "conservative_debator": {"provider": "vertex_gemini",    "model": "gemini-3.5-flash"},
     "neutral_debator":      {"provider": "vertex_anthropic", "model": "claude-opus-4-8"},
     # judges — Claude (user's choice)
@@ -102,8 +103,8 @@ both tangle responsibilities the codebase deliberately keeps separate.)
     `google.auth.transport.requests.Request()` and returns `credentials.token`
     (used only by the Grok OpenAI-compatible path).
   - `resolve_project(explicit)` / `resolve_location(explicit)` → explicit arg →
-    config → env (`GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`) → sensible
-    default. **All `google.*` imports are lazy** (function-local) so importing the
+    config → env (`GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`) → default
+    location `"global"`. **All `google.*` imports are lazy** (function-local) so importing the
     module never pulls the Vertex SDK during test collection.
   - `openapi_base_url(project, location)` → builds the OpenAI-compatible base:
     `https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/endpoints/openapi`
@@ -165,8 +166,8 @@ factory signatures `create_X(llm)` are **unchanged**.
 ```python
 "role_models": None,        # None/{} => current quick/deep tier behavior (backward compat)
 "vertex_project": None,     # else env GOOGLE_CLOUD_PROJECT
-"vertex_location": None,    # else env GOOGLE_CLOUD_LOCATION, else default "us-central1"
-                            # (Grok pins "global" per-model in the preset)
+"vertex_location": None,    # else env GOOGLE_CLOUD_LOCATION, else default "global"
+                            # (all three models run on the Vertex global endpoint)
 ```
 
 A model spec is `{"provider", "model"}` plus optional `location` and optional
@@ -331,10 +332,11 @@ push to origin.
   Vertex Anthropic publisher IDs are often date-suffixed (`...@YYYYMMDD`). Use the
   given value, keep it config-overridable, and **verify at live test**; append a
   date suffix if Vertex rejects the bare id.
-- **Region/location per model:** Gemini, Claude, and Grok may be enabled in
-  different regions (Grok commonly on `global`). `location` is per-model
-  overridable; the user sets `vertex_location` (or per-spec `location`) to match
-  `tpmn-dev` enablement. Resolve exact regions at live test.
+- **Region/location:** all three models run on the Vertex `global` endpoint
+  (confirmed by the user), so `vertex_location` defaults to `"global"` and no
+  per-model override is needed. `location` remains per-model overridable for
+  future flexibility. Grok's `global` host drops the `{location}-` prefix in the
+  `endpoints/openapi` URL (handled by `vertex_auth.openapi_base_url`).
 - **Grok token expiry (~1h)** for very long runs — documented limitation (§8).
 - **Cost/latency:** three distinct models (two Opus judges) multiply cost and the
   failure surface; debate rounds amplify it. Surfaced at CLI selection.
