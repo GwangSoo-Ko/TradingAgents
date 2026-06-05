@@ -108,3 +108,29 @@ class TestAlphaVantageFetch:
         )
         from tradingagents.dataflows.alpha_vantage_stock import get_latest_close_on_or_before
         assert get_latest_close_on_or_before("GOOG", "2026-06-05") is None
+
+
+@pytest.mark.unit
+class TestCrosscheckEdgeCases:
+    def test_fetch_none_when_close_column_missing(self, monkeypatch):
+        monkeypatch.setattr(
+            "tradingagents.dataflows.alpha_vantage_stock._make_api_request",
+            lambda fn, params: "timestamp,open,high,low,volume\n2026-06-04,1,2,3,4\n",
+        )
+        from tradingagents.dataflows.alpha_vantage_stock import get_latest_close_on_or_before
+        assert get_latest_close_on_or_before("GOOG", "2026-06-05") is None
+
+    def test_fetch_none_when_all_rows_after_cutoff(self, monkeypatch):
+        monkeypatch.setattr(
+            "tradingagents.dataflows.alpha_vantage_stock._make_api_request",
+            lambda fn, params: "timestamp,open,high,low,close,volume\n2026-06-10,1,2,3,400.0,5\n",
+        )
+        from tradingagents.dataflows.alpha_vantage_stock import get_latest_close_on_or_before
+        assert get_latest_close_on_or_before("GOOG", "2026-06-05") is None
+
+    def test_pct_diff_exactly_half_percent_is_confirmed(self, monkeypatch):
+        # 100.50 vs 100.00 = exactly 0.5% -> the inclusive boundary lands in "confirmed".
+        _patch_av(monkeypatch, ("2026-06-03", 100.50))
+        out = validator._latest_price_crosscheck("GOOG", "2026-06-05", "2026-06-03", 100.00)
+        assert "confirmed" in out.lower()
+        assert "discrepancy" not in out.lower()

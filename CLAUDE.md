@@ -128,6 +128,8 @@ Tools route to vendors through two-level config:
 
 Currently `yfinance` and `alpha_vantage`. Tools are created in `agents/utils/agent_utils.py` (re-exporting from `core_stock_tools.py`, `technical_indicators_tools.py`, `fundamental_data_tools.py`, `news_data_tools.py`) and grouped into `ToolNode`s by analyst type in `_create_tool_nodes()`.
 
+**Latest-close cross-check (verified snapshot).** `dataflows/market_data_validator.py:build_verified_market_snapshot` (the `get_verified_market_snapshot` tool) cross-checks the primary feed's latest close against Alpha Vantage (`alpha_vantage_stock.get_latest_close_on_or_before`, `TIME_SERIES_DAILY` compact, filtered `<= curr_date` so it stays look-ahead-safe). When Alpha Vantage has a more recent close than yfinance — the common case where yfinance lags the latest session (returns a NaN/missing last close) — the snapshot flags the primary feed as STALE and surfaces the newer close. Best-effort: gated by `enable_alpha_vantage_price_crosscheck` (default True; env `TRADINGAGENTS_AV_PRICE_CROSSCHECK`), needs `ALPHA_VANTAGE_API_KEY`, and returns nothing (no behavior change) without a key or on any error. yfinance stays the primary vendor — this only adds a one-call verification, not a vendor switch.
+
 ### Persistence
 
 Two independent mechanisms, both rooted at `~/.tradingagents/` (override base dir with `TRADINGAGENTS_CACHE_DIR`):
