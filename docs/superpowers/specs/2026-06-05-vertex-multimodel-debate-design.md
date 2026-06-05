@@ -114,13 +114,16 @@ both tangle responsibilities the codebase deliberately keeps separate.)
 - `tradingagents/llm_clients/vertex_clients.py` — three small client classes
   (all extend `BaseLLMClient`, all lazy-import their SDK in `get_llm()`):
   - `VertexGeminiClient` → `NormalizedChatVertexAI(model=..., project=..., location=...)`
-    from `langchain_google_vertexai`. Maps `thinking_level` exactly like the
-    existing `GoogleClient` (Gemini 3 → `thinking_level`; Gemini 2.5 →
-    `thinking_budget`). Forwards `temperature`, `timeout`, `max_retries`.
+    from `langchain_google_vertexai`. **v1 forwards a minimal, SDK-safe kwarg set**
+    (`temperature`, `max_retries`, `callbacks`). Thinking-config plumbing
+    (`thinking_level`/`thinking_budget`) for the Vertex SDK is **deferred** until
+    the exact accepted param name is confirmed at live test — forwarding an
+    unverified kwarg risks a constructor error against an SDK we can't live-run here.
   - `VertexAnthropicClient` → `NormalizedChatAnthropicVertex(model_name=...,
     project=..., location=...)` from `langchain_google_vertexai.model_garden`.
-    Forwards `effort` (gated by the existing `_supports_effort` rule),
-    `temperature`, `max_tokens`, `timeout`, `max_retries`.
+    **v1 forwards a minimal, SDK-safe kwarg set** (`temperature`, `max_tokens`,
+    `max_retries`, `callbacks`). `effort` plumbing for Vertex Claude is **deferred**
+    (same reason); the preset does not set it.
   - `VertexGrokClient` → builds `endpoints/openapi` base_url + an OAuth access
     token (via `vertex_auth`), then returns a `NormalizedChatOpenAI(model=...,
     base_url=..., api_key=<token>, reasoning_effort=...)`. Reuses
@@ -152,9 +155,12 @@ if provider_lower == "vertex_grok":
 
 ### 4.3 Model catalog / validation
 
-Register the three Vertex model IDs in `model_catalog.py` under their new provider
-keys so `warn_if_unknown_model()` stays quiet, and so the CLI/validation has a
-source of truth. (Catalog is additive; existing entries unchanged.)
+No catalog change is needed: `validate_model()` already returns `True` for any
+provider not present in `VALID_MODELS` (the catalog), so an unregistered
+`vertex_*` provider never triggers `warn_if_unknown_model()`. Each Vertex client's
+`validate_model()` simply returns `True` (any model accepted), matching how
+`ollama`/`openrouter` behave. This keeps the catalog untouched and avoids the CLI
+model-dropdown machinery (which Vertex mode skips anyway).
 
 ## 5. Architecture — generic role→model engine
 
@@ -277,9 +283,10 @@ factory, so it carries its provider-native structured-output mode:
   "anthropic[vertex]"]`. Install with `pip install -e ".[vertex]"`.
 - All Vertex SDK imports are **lazy** (inside `get_llm()` / function-local in
   `vertex_auth`), so the default install and the test suite run without the extra.
-- `.env.example`: add `GOOGLE_CLOUD_PROJECT=`, `GOOGLE_CLOUD_LOCATION=`, and a note
-  to run `gcloud auth application-default login` (or set
-  `GOOGLE_APPLICATION_CREDENTIALS`).
+- Required env (`GOOGLE_CLOUD_PROJECT`, optional `GOOGLE_CLOUD_LOCATION`, and ADC
+  via `gcloud auth application-default login` or `GOOGLE_APPLICATION_CREDENTIALS`)
+  is documented in `CLAUDE.md`. (`.env.example` is not edited here — it is outside
+  the tool's writable scope in this environment; the user can mirror the keys there.)
 
 ## 10. Testing strategy
 
