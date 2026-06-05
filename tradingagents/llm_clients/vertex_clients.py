@@ -43,6 +43,14 @@ def _normalized_subclass(base_cls: type) -> type:
     return cached
 
 
+def _require_vertex_sdk(exc: ImportError) -> ImportError:
+    """Return a clear, actionable error when the optional [vertex] extra is absent."""
+    return ImportError(
+        "Vertex AI Model Garden support requires the optional dependencies. "
+        'Install them with:  pip install -e ".[vertex]"'
+    )
+
+
 class _VertexClientBase(BaseLLMClient):
     """Shared ctor for Vertex clients: project/location alongside model/base_url."""
 
@@ -68,7 +76,10 @@ class VertexGeminiClient(_VertexClientBase):
     """Gemini on Vertex via ChatVertexAI."""
 
     def get_llm(self) -> Any:
-        from langchain_google_vertexai import ChatVertexAI
+        try:
+            from langchain_google_vertexai import ChatVertexAI
+        except ImportError as exc:
+            raise _require_vertex_sdk(exc) from exc
 
         cls = _normalized_subclass(ChatVertexAI)
         llm_kwargs = {
@@ -86,7 +97,10 @@ class VertexAnthropicClient(_VertexClientBase):
     """Claude on Vertex via ChatAnthropicVertex (uses ``model_name=``)."""
 
     def get_llm(self) -> Any:
-        from langchain_google_vertexai.model_garden import ChatAnthropicVertex
+        try:
+            from langchain_google_vertexai.model_garden import ChatAnthropicVertex
+        except ImportError as exc:
+            raise _require_vertex_sdk(exc) from exc
 
         cls = _normalized_subclass(ChatAnthropicVertex)
         llm_kwargs = {

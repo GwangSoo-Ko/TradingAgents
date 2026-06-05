@@ -37,8 +37,14 @@ def get_access_token(credentials=None) -> str:
     endpoint), which passes the token as the OpenAI ``api_key``. Tokens expire
     in ~1 hour; this fetches/refreshes one at client-build time.
     """
-    import google.auth
-    import google.auth.transport.requests
+    try:
+        import google.auth
+        import google.auth.transport.requests
+    except ImportError as exc:  # pragma: no cover - exercised via vertex clients
+        raise ImportError(
+            "Vertex AI Model Garden support requires the optional dependencies. "
+            'Install them with:  pip install -e ".[vertex]"'
+        ) from exc
 
     if credentials is None:
         credentials, _ = google.auth.default(scopes=[_CLOUD_PLATFORM_SCOPE])

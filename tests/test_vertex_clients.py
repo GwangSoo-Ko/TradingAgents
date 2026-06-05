@@ -160,3 +160,37 @@ class TestVertexClients:
             create_llm_client("vertex_grok", "xai/grok-4.20-reasoning", project="p"),
             VertexGrokClient,
         )
+
+
+@pytest.mark.unit
+class TestMissingVertexSDK:
+    """When the optional [vertex] extra is absent, raise an actionable error."""
+
+    def _force_import_error(self, monkeypatch, missing_name):
+        import builtins
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == missing_name or name.startswith(missing_name + "."):
+                raise ImportError(f"No module named '{missing_name}'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    def test_gemini_missing_sdk_points_to_extra(self, monkeypatch):
+        self._force_import_error(monkeypatch, "langchain_google_vertexai")
+        from tradingagents.llm_clients.vertex_clients import VertexGeminiClient
+        with pytest.raises(ImportError, match=r'pip install -e ".\[vertex\]"'):
+            VertexGeminiClient("gemini-3.5-flash", project="p", location="global").get_llm()
+
+    def test_anthropic_missing_sdk_points_to_extra(self, monkeypatch):
+        self._force_import_error(monkeypatch, "langchain_google_vertexai")
+        from tradingagents.llm_clients.vertex_clients import VertexAnthropicClient
+        with pytest.raises(ImportError, match=r'pip install -e ".\[vertex\]"'):
+            VertexAnthropicClient("claude-opus-4-8", project="p", location="global").get_llm()
+
+    def test_get_access_token_missing_google_auth_points_to_extra(self, monkeypatch):
+        self._force_import_error(monkeypatch, "google.auth")
+        from tradingagents.llm_clients import vertex_auth
+        with pytest.raises(ImportError, match=r'pip install -e ".\[vertex\]"'):
+            vertex_auth.get_access_token()
