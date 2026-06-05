@@ -109,6 +109,17 @@ works non-interactively via `TRADINGAGENTS_LLM_PROVIDER=vertex_model_garden` +
 thinking-config plumbing is deferred. Don't remove the vendor-direct providers —
 they stay for single-model runs.
 
+For users without an Anthropic/xAI API key, two CLI options run the **whole
+pipeline on a single Vertex-hosted model** (no vendor key, ADC auth): **"Vertex
+Model Garden — Claude (claude-opus-4-8)"** and **"Vertex Model Garden — Grok
+(xai/grok-4.3)"**. Their provider key IS the real `vertex_anthropic` /
+`vertex_grok` client key; `cli/presets.py:VERTEX_SINGLE_MODELS` maps it to the
+fixed model and `apply_vertex_single_model_config` sets `llm_provider` +
+quick/deep think models + project/location with `role_models` unset (the normal
+single-model path). They also work non-interactively via
+`TRADINGAGENTS_LLM_PROVIDER=vertex_anthropic|vertex_grok` + `GOOGLE_CLOUD_PROJECT`.
+The multi-model preset's Grok role also uses `xai/grok-4.3`.
+
 ### Data vendor abstraction (`tradingagents/dataflows/`)
 
 Tools route to vendors through two-level config:
