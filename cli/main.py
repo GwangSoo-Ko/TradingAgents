@@ -584,6 +584,23 @@ def get_user_selections():
         console.print(f"[green]✓ Backend URL:[/green] {backend_url}")
         # Still confirm/persist the API key so the run doesn't fail later.
         ensure_api_key(selected_llm_provider)
+
+        # vertex_model_garden is a CLI meta-provider (not a real client key): when
+        # set via TRADINGAGENTS_LLM_PROVIDER, enable multi-model mode here and read
+        # project/location from the environment so the run stays fully non-interactive.
+        if selected_llm_provider == "vertex_model_garden":
+            is_vertex_multimodel = True
+            vertex_project = os.environ.get("GOOGLE_CLOUD_PROJECT")
+            vertex_location = os.environ.get("GOOGLE_CLOUD_LOCATION") or "global"
+            if not vertex_project:
+                console.print(
+                    "[red]Vertex multi-model debate requires GOOGLE_CLOUD_PROJECT to be "
+                    "set when selected via TRADINGAGENTS_LLM_PROVIDER.[/red]"
+                )
+                raise typer.Exit(1)
+            console.print(
+                "[green]✓ Vertex multi-model debate preset (from environment).[/green]"
+            )
     else:
         console.print(
             create_question_box(
@@ -618,8 +635,8 @@ def get_user_selections():
             vertex_project, vertex_location = ask_vertex_config()
             console.print(
                 "[yellow]Multi-model debate uses 3 distinct Vertex models "
-                "(incl. Claude Opus judges): slower and more expensive than a "
-                "single model — debate rounds multiply the cost.[/yellow]"
+                "(Claude Opus for both judges and the neutral debater): slower and more "
+                "expensive than a single model — debate rounds multiply the cost.[/yellow]"
             )
 
         # Confirm the provider's API key is present; prompt the user to paste
