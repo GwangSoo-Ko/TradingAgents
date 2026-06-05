@@ -488,6 +488,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 **Files:**
 - Modify: `tradingagents/default_config.py` (insert after line 72, the `temperature` key)
 - Modify: `tradingagents/graph/trading_graph.py` (constants after line 49; `__init__` lines 81-102; resolver methods after line 165)
+- Create: `cli/presets.py` (the pure preset constant + apply helper; the resolver tests import `VERTEX_DEBATE_PRESET` from it, so it is created here, not in Task 5)
 - Test: `tests/test_role_model_resolver.py`
 
 - [ ] **Step 1: Add the new config keys in `tradingagents/default_config.py`**
@@ -682,18 +683,14 @@ Replace lines 81-102 (from `# Initialize LLMs with provider-specific thinking co
         self.quick_thinking_llm = self._llm_for_tier("quick")
 ```
 
-- [ ] **Step 4c: Replace the `GraphSetup(...)` call**
+- [ ] **Step 4c: Leave the `GraphSetup(...)` call UNCHANGED in this task.**
 
-Replace lines 114-120 (the `self.graph_setup = GraphSetup(...)` block) with:
-
-```python
-        self.graph_setup = GraphSetup(
-            self._llm_for,
-            self.tool_nodes,
-            self.conditional_logic,
-            analyst_concurrency_limit=self.config.get("analyst_concurrency_limit", 1),
-        )
-```
+`self.quick_thinking_llm` / `self.deep_thinking_llm` are still built (now via the
+resolver tier path) and still passed positionally to `GraphSetup`, which keeps its
+old `(quick_thinking_llm, deep_thinking_llm, ...)` signature until Task 4. This keeps
+`TradingAgentsGraph` constructible after Task 3 (the GraphSetup signature change and
+the call change land together in Task 4, so there is no broken intermediate state).
+Do not touch the `self.graph_setup = GraphSetup(...)` block here.
 
 - [ ] **Step 4d: Add the resolver methods**
 
@@ -775,18 +772,73 @@ Insert immediately after the `_get_provider_kwargs` method (after line 165, its 
         return self._build_cached(spec["provider"], spec["model"], location, kwargs)
 ```
 
+- [ ] **Step 4e: Create `cli/presets.py`** (pure preset module the resolver tests import)
+
+```python
+"""Presets that populate role_models for the CLI's multi-model debate options.
+
+Kept separate from cli/main.py so the mapping (and the config it produces) is
+unit-testable without importing the interactive CLI.
+"""
+from __future__ import annotations
+
+from typing import Any, Dict
+
+# Vertex Model Garden multi-model debate (Gemini / Claude / Grok), all on the
+# Vertex `global` endpoint. Judges (research_manager, portfolio_manager) run on
+# Claude; the five debate roles are diversified across the three families; the
+# four analysts and the trader are omitted and fall back to the quick-tier
+# default (Gemini) via the role->model resolver.
+VERTEX_DEBATE_PRESET: Dict[str, Dict[str, str]] = {
+    "bull_researcher":      {"provider": "vertex_gemini",    "model": "gemini-3.5-flash"},
+    "bear_researcher":      {"provider": "vertex_grok",      "model": "xai/grok-4.20-reasoning"},
+    "aggressive_debator":   {"provider": "vertex_grok",      "model": "xai/grok-4.20-reasoning"},
+    "conservative_debator": {"provider": "vertex_gemini",    "model": "gemini-3.5-flash"},
+    "neutral_debator":      {"provider": "vertex_anthropic", "model": "claude-opus-4-8"},
+    "research_manager":     {"provider": "vertex_anthropic", "model": "claude-opus-4-8"},
+    "portfolio_manager":    {"provider": "vertex_anthropic", "model": "claude-opus-4-8"},
+}
+
+# Default model for roles not in the preset (analysts + trader) and for the
+# quick/deep tier fallback in Vertex mode.
+VERTEX_DEFAULT_MODEL = "gemini-3.5-flash"
+
+
+def apply_vertex_multimodel_config(
+    config: Dict[str, Any], selections: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Apply the Vertex multi-model debate preset to ``config`` in place.
+
+    No-op unless ``selections['enable_vertex_multimodel']`` is truthy, so any
+    other provider choice leaves ``role_models`` unset and the run on its
+    single-model path.
+    """
+    if not selections.get("enable_vertex_multimodel"):
+        return config
+    config["llm_provider"] = "vertex_gemini"
+    config["quick_think_llm"] = VERTEX_DEFAULT_MODEL
+    config["deep_think_llm"] = VERTEX_DEFAULT_MODEL
+    config["role_models"] = dict(VERTEX_DEBATE_PRESET)
+    config["vertex_project"] = selections.get("vertex_project")
+    config["vertex_location"] = selections.get("vertex_location") or "global"
+    return config
+```
+
 - [ ] **Step 5: Run the resolver tests to verify they pass**
 
 Run: `DEEPSEEK_API_KEY=placeholder .venv/bin/python -m pytest tests/test_role_model_resolver.py -q`
-Expected: PASS (all backward-compat + preset + dedup tests green)
+Expected: PASS — all of `TestBackwardCompatTierDefaults` and `TestRoleModelsPreset` (backward-compat, routing, dedup) green, since `cli/presets.py` now exists.
 
-Note: `tests/test_role_model_resolver.py` imports `from cli.presets import VERTEX_DEBATE_PRESET`, created in Task 5. If running this task in isolation before Task 5, the `TestRoleModelsPreset` class errors on import — that's expected; it goes green after Task 5. The `TestBackwardCompatTierDefaults` class passes now. (When executing top-to-bottom, do Task 5 before the final full-suite run.)
+Then confirm no regression to the rest of the suite (the graph still constructs because the `GraphSetup` call is unchanged in this task):
+
+Run: `DEEPSEEK_API_KEY=placeholder .venv/bin/python -m pytest -q`
+Expected: PASS (pre-existing baseline + the new resolver tests; zero failures).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add tradingagents/default_config.py tradingagents/graph/trading_graph.py tests/test_role_model_resolver.py
-git commit -m "feat(graph): role->model resolver with client dedup + vertex config keys
+git add tradingagents/default_config.py tradingagents/graph/trading_graph.py cli/presets.py tests/test_role_model_resolver.py
+git commit -m "feat(graph): role->model resolver with client dedup + vertex config keys + preset
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
@@ -797,6 +849,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `tradingagents/graph/setup.py` (imports line 3; `__init__` lines 17-30; `setup_graph` lines 49-66)
+- Modify: `tradingagents/graph/trading_graph.py` (the `self.graph_setup = GraphSetup(...)` call — change it to pass `self._llm_for`, together with the signature change so there is no broken intermediate state)
 - Test: `tests/test_graph_setup_wiring.py`
 
 - [ ] **Step 1: Write the failing wiring test** (create `tests/test_graph_setup_wiring.py`)
@@ -908,15 +961,40 @@ from typing import Any, Callable, Dict
         portfolio_manager_node = create_portfolio_manager(self.llm_for("portfolio_manager"))
 ```
 
-- [ ] **Step 4: Run the wiring test to verify it passes**
+- [ ] **Step 3d: Update the `GraphSetup(...)` call in `tradingagents/graph/trading_graph.py`**
+
+Find the `self.graph_setup = GraphSetup(...)` block (it currently passes
+`self.quick_thinking_llm, self.deep_thinking_llm` positionally) and replace it with:
+
+```python
+        self.graph_setup = GraphSetup(
+            self._llm_for,
+            self.tool_nodes,
+            self.conditional_logic,
+            analyst_concurrency_limit=self.config.get("analyst_concurrency_limit", 1),
+        )
+```
+
+`self.quick_thinking_llm` / `self.deep_thinking_llm` are still built earlier in
+`__init__` (Task 3) and remain in use by `Reflector` / `SignalProcessor` — only the
+`GraphSetup` wiring changes here. This pairs with the signature change in Step 3b so
+the graph stays constructible.
+
+- [ ] **Step 4: Run the wiring test AND the full suite to verify no regression**
 
 Run: `DEEPSEEK_API_KEY=placeholder .venv/bin/python -m pytest tests/test_graph_setup_wiring.py -q`
 Expected: PASS
 
+Then the full suite (this is the task that re-couples the GraphSetup call/signature,
+so any full-graph test must still build):
+
+Run: `DEEPSEEK_API_KEY=placeholder .venv/bin/python -m pytest -q`
+Expected: PASS (baseline + new tests, zero failures).
+
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tradingagents/graph/setup.py tests/test_graph_setup_wiring.py
+git add tradingagents/graph/setup.py tradingagents/graph/trading_graph.py tests/test_graph_setup_wiring.py
 git commit -m "refactor(graph): GraphSetup wires each node via llm_for(role)
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
@@ -927,7 +1005,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ## Task 5: CLI "Vertex Model Garden" preset
 
 **Files:**
-- Create: `cli/presets.py`
+- (`cli/presets.py` was already created in Task 3 — do NOT recreate it; just import from it.)
 - Modify: `cli/utils.py` (`_llm_provider_table` line 355-367; add `ask_vertex_config`)
 - Modify: `cli/main.py` (imports ~line 35; `get_user_selections` lines 571-681; `run_analysis` ~line 1014)
 - Test: `tests/test_vertex_cli_preset.py`
@@ -1012,57 +1090,7 @@ class TestApplyVertexConfig:
 Run: `DEEPSEEK_API_KEY=placeholder .venv/bin/python -m pytest tests/test_vertex_cli_preset.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'cli.presets'`
 
-- [ ] **Step 3a: Create `cli/presets.py`**
-
-```python
-"""Presets that populate role_models for the CLI's multi-model debate options.
-
-Kept separate from cli/main.py so the mapping (and the config it produces) is
-unit-testable without importing the interactive CLI.
-"""
-from __future__ import annotations
-
-from typing import Any, Dict
-
-# Vertex Model Garden multi-model debate (Gemini / Claude / Grok), all on the
-# Vertex `global` endpoint. Judges (research_manager, portfolio_manager) run on
-# Claude; the five debate roles are diversified across the three families; the
-# four analysts and the trader are omitted and fall back to the quick-tier
-# default (Gemini) via the role->model resolver.
-VERTEX_DEBATE_PRESET: Dict[str, Dict[str, str]] = {
-    "bull_researcher":      {"provider": "vertex_gemini",    "model": "gemini-3.5-flash"},
-    "bear_researcher":      {"provider": "vertex_grok",      "model": "xai/grok-4.20-reasoning"},
-    "aggressive_debator":   {"provider": "vertex_grok",      "model": "xai/grok-4.20-reasoning"},
-    "conservative_debator": {"provider": "vertex_gemini",    "model": "gemini-3.5-flash"},
-    "neutral_debator":      {"provider": "vertex_anthropic", "model": "claude-opus-4-8"},
-    "research_manager":     {"provider": "vertex_anthropic", "model": "claude-opus-4-8"},
-    "portfolio_manager":    {"provider": "vertex_anthropic", "model": "claude-opus-4-8"},
-}
-
-# Default model for roles not in the preset (analysts + trader) and for the
-# quick/deep tier fallback in Vertex mode.
-VERTEX_DEFAULT_MODEL = "gemini-3.5-flash"
-
-
-def apply_vertex_multimodel_config(
-    config: Dict[str, Any], selections: Dict[str, Any]
-) -> Dict[str, Any]:
-    """Apply the Vertex multi-model debate preset to ``config`` in place.
-
-    No-op unless ``selections['enable_vertex_multimodel']`` is truthy, so any
-    other provider choice leaves ``role_models`` unset and the run on its
-    single-model path.
-    """
-    if not selections.get("enable_vertex_multimodel"):
-        return config
-    config["llm_provider"] = "vertex_gemini"
-    config["quick_think_llm"] = VERTEX_DEFAULT_MODEL
-    config["deep_think_llm"] = VERTEX_DEFAULT_MODEL
-    config["role_models"] = dict(VERTEX_DEBATE_PRESET)
-    config["vertex_project"] = selections.get("vertex_project")
-    config["vertex_location"] = selections.get("vertex_location") or "global"
-    return config
-```
+- [ ] **Step 3a: `cli/presets.py` already exists (created in Task 3).** Do NOT recreate it. Task 5 imports `apply_vertex_multimodel_config` and `VERTEX_DEBATE_PRESET` from it. Proceed to Step 3b.
 
 - [ ] **Step 3b: Add the provider-table row in `cli/utils.py`**
 
@@ -1190,7 +1218,7 @@ Expected: PASS — the pre-existing baseline plus all new tests (no failures int
 - [ ] **Step 7: Commit**
 
 ```bash
-git add cli/presets.py cli/utils.py cli/main.py tests/test_vertex_cli_preset.py
+git add cli/utils.py cli/main.py tests/test_vertex_cli_preset.py
 git commit -m "feat(cli): Vertex Model Garden multi-model debate preset + project/location prompt
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
