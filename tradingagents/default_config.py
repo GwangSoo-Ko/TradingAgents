@@ -70,6 +70,16 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # variation on models that honor it; reasoning models largely ignore it
     # and no setting makes LLM output bit-identical across runs (see README).
     "temperature": None,
+    # Multi-model debate: maps a graph role key to {"provider","model"[,"location",
+    # "temperature", ...]}. None/{} => current quick/deep tier behavior (fully
+    # backward compatible). Set by the CLI "Vertex Model Garden" preset.
+    "role_models": None,
+    # Vertex AI Model Garden access — used only when a role routes to a vertex_*
+    # provider. project falls back to env GOOGLE_CLOUD_PROJECT; location falls back
+    # to GOOGLE_CLOUD_LOCATION then "global". Credentials come from ADC (gcloud auth
+    # application-default login) or GOOGLE_APPLICATION_CREDENTIALS — never an API key.
+    "vertex_project": None,
+    "vertex_location": None,
     # Checkpoint/resume: when True, LangGraph saves state after each node
     # so a crashed run can resume from the last successful step.
     "checkpoint_enabled": False,

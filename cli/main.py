@@ -33,6 +33,8 @@ from cli.models import AnalystType
 from cli.utils import *
 from cli.announcements import fetch_announcements, display_announcements
 from cli.stats_handler import StatsCallbackHandler
+from cli.presets import apply_vertex_multimodel_config
+from cli.report_meta import analysis_mode_tag
 
 console = Console()
 
@@ -572,6 +574,9 @@ def get_user_selections():
     # The backend URL comes from TRADINGAGENTS_LLM_BACKEND_URL when set,
     # otherwise the provider's default endpoint — the same value the menu
     # would have picked.
+    is_vertex_multimodel = False
+    vertex_project = None
+    vertex_location = None
     provider_from_env = bool(os.environ.get("TRADINGAGENTS_LLM_PROVIDER"))
     if provider_from_env:
         selected_llm_provider = DEFAULT_CONFIG["llm_provider"].lower()
@@ -580,6 +585,23 @@ def get_user_selections():
         console.print(f"[green]✓ Backend URL:[/green] {backend_url}")
         # Still confirm/persist the API key so the run doesn't fail later.
         ensure_api_key(selected_llm_provider)
+
+        # vertex_model_garden is a CLI meta-provider (not a real client key): when
+        # set via TRADINGAGENTS_LLM_PROVIDER, enable multi-model mode here and read
+        # project/location from the environment so the run stays fully non-interactive.
+        if selected_llm_provider == "vertex_model_garden":
+            is_vertex_multimodel = True
+            vertex_project = os.environ.get("GOOGLE_CLOUD_PROJECT")
+            vertex_location = os.environ.get("GOOGLE_CLOUD_LOCATION") or "global"
+            if not vertex_project:
+                console.print(
+                    "[red]Vertex multi-model debate requires GOOGLE_CLOUD_PROJECT to be "
+                    "set when selected via TRADINGAGENTS_LLM_PROVIDER.[/red]"
+                )
+                raise typer.Exit(1)
+            console.print(
+                "[green]✓ Vertex multi-model debate preset (from environment).[/green]"
+            )
     else:
         console.print(
             create_question_box(
@@ -603,13 +625,35 @@ def get_user_selections():
         if selected_llm_provider == "ollama":
             confirm_ollama_endpoint(backend_url)
 
+        is_vertex_multimodel = selected_llm_provider == "vertex_model_garden"
+        if is_vertex_multimodel:
+            console.print(
+                create_question_box(
+                    "Vertex AI Configuration",
+                    "GCP project + location for Model Garden (ADC auth, no API key)",
+                )
+            )
+            vertex_project, vertex_location = ask_vertex_config()
+            console.print(
+                "[yellow]Multi-model debate uses 3 distinct Vertex models "
+                "(Claude Opus for both judges and the neutral debater): slower and more "
+                "expensive than a single model — debate rounds multiply the cost.[/yellow]"
+            )
+
         # Confirm the provider's API key is present; prompt the user to paste
         # one and persist it to .env if it's missing, so the analysis run
         # doesn't fail later at the first API call.
         ensure_api_key(selected_llm_provider)
 
     # Step 7: Thinking agents (skipped when either model is set via environment)
-    if os.environ.get("TRADINGAGENTS_QUICK_THINK_LLM") or os.environ.get("TRADINGAGENTS_DEEP_THINK_LLM"):
+    if is_vertex_multimodel:
+        selected_shallow_thinker = "gemini-3.5-flash"
+        selected_deep_thinker = "gemini-3.5-flash"
+        console.print(
+            "[green]✓ Vertex multi-model debate preset selected "
+            "(per-role models applied; analysts/trader default to Gemini).[/green]"
+        )
+    elif os.environ.get("TRADINGAGENTS_QUICK_THINK_LLM") or os.environ.get("TRADINGAGENTS_DEEP_THINK_LLM"):
         selected_shallow_thinker = DEFAULT_CONFIG["quick_think_llm"]
         selected_deep_thinker = DEFAULT_CONFIG["deep_think_llm"]
         console.print(
@@ -678,6 +722,9 @@ def get_user_selections():
         "anthropic_effort": anthropic_effort,
         "output_language": output_language,
         "enable_kr_sources": enable_kr_sources,
+        "enable_vertex_multimodel": is_vertex_multimodel,
+        "vertex_project": vertex_project,
+        "vertex_location": vertex_location,
     }
 
 
@@ -700,7 +747,7 @@ def get_analysis_date():
             )
 
 
-def save_report_to_disk(final_state, ticker: str, save_path: Path):
+def save_report_to_disk(final_state, ticker: str, save_path: Path, config: dict | None = None):
     """Save complete analysis report to disk with organized subfolders."""
     save_path.mkdir(parents=True, exist_ok=True)
     sections = []
@@ -786,7 +833,13 @@ def save_report_to_disk(final_state, ticker: str, save_path: Path):
 
     # Write consolidated report — title as "Company Name (TICKER)" for readability.
     from tradingagents.agents.utils.agent_utils import instrument_display_label
-    header = f"# Trading Analysis Report: {instrument_display_label(ticker)}\n\nGenerated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    from cli.report_meta import analysis_config_block
+    config_block = analysis_config_block(config) if config else ""
+    header = (
+        f"# Trading Analysis Report: {instrument_display_label(ticker)}\n\n"
+        f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        f"{config_block}"
+    )
     (save_path / "complete_report.md").write_text(header + "\n\n".join(sections), encoding="utf-8")
     return save_path / "complete_report.md"
 
@@ -1012,6 +1065,9 @@ def run_analysis(checkpoint: bool = False):
     config["anthropic_effort"] = selections.get("anthropic_effort")
     config["output_language"] = selections.get("output_language", "English")
     config["checkpoint_enabled"] = checkpoint
+
+    # Vertex multi-model debate preset (no-op unless that provider was selected).
+    apply_vertex_multimodel_config(config, selections)
 
     # Opt-in Korean data sources (only offered for KR tickers). Routes news to
     # Naver and fundamentals to wisereport+OpenDART (both fall back to yfinance
@@ -1284,14 +1340,15 @@ def run_analysis(checkpoint: bool = False):
     save_choice = typer.prompt("Save report?", default="Y").strip().upper()
     if save_choice in ("Y", "YES", ""):
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        default_path = Path.cwd() / "reports" / f"{selections['ticker']}_{timestamp}"
+        mode_tag = analysis_mode_tag(config)
+        default_path = Path.cwd() / "reports" / f"{selections['ticker']}_{timestamp}_{mode_tag}"
         save_path_str = typer.prompt(
             "Save path (press Enter for default)",
             default=str(default_path)
         ).strip()
         save_path = Path(save_path_str)
         try:
-            report_file = save_report_to_disk(final_state, selections["ticker"], save_path)
+            report_file = save_report_to_disk(final_state, selections["ticker"], save_path, config)
             console.print(f"\n[green]✓ Report saved to:[/green] {save_path.resolve()}")
             console.print(f"  [dim]Complete report:[/dim] {report_file.name}")
         except Exception as e:

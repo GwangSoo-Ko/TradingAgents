@@ -1,6 +1,6 @@
 # TradingAgents/graph/setup.py
 
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
@@ -16,15 +16,19 @@ class GraphSetup:
 
     def __init__(
         self,
-        quick_thinking_llm: Any,
-        deep_thinking_llm: Any,
+        llm_for: Callable[[str], Any],
         tool_nodes: Dict[str, ToolNode],
         conditional_logic: ConditionalLogic,
         analyst_concurrency_limit: int = 1,
     ):
-        """Initialize with required components."""
-        self.quick_thinking_llm = quick_thinking_llm
-        self.deep_thinking_llm = deep_thinking_llm
+        """Initialize with required components.
+
+        ``llm_for(role_key)`` resolves the LLM for a graph role (see
+        ``TradingAgentsGraph._llm_for``); it lets each node run on its own model
+        in multi-model debate mode while staying identical to the old quick/deep
+        wiring when ``role_models`` is unset.
+        """
+        self.llm_for = llm_for
         self.tool_nodes = tool_nodes
         self.conditional_logic = conditional_logic
         self.analyst_concurrency_limit = analyst_concurrency_limit
@@ -47,23 +51,23 @@ class GraphSetup:
         )
 
         analyst_factories = {
-            "market": lambda: create_market_analyst(self.quick_thinking_llm),
-            "social": lambda: create_sentiment_analyst(self.quick_thinking_llm),
-            "news": lambda: create_news_analyst(self.quick_thinking_llm),
-            "fundamentals": lambda: create_fundamentals_analyst(self.quick_thinking_llm),
+            "market": lambda: create_market_analyst(self.llm_for("market_analyst")),
+            "social": lambda: create_sentiment_analyst(self.llm_for("sentiment_analyst")),
+            "news": lambda: create_news_analyst(self.llm_for("news_analyst")),
+            "fundamentals": lambda: create_fundamentals_analyst(self.llm_for("fundamentals_analyst")),
         }
 
         # Create researcher and manager nodes
-        bull_researcher_node = create_bull_researcher(self.quick_thinking_llm)
-        bear_researcher_node = create_bear_researcher(self.quick_thinking_llm)
-        research_manager_node = create_research_manager(self.deep_thinking_llm)
-        trader_node = create_trader(self.quick_thinking_llm)
+        bull_researcher_node = create_bull_researcher(self.llm_for("bull_researcher"))
+        bear_researcher_node = create_bear_researcher(self.llm_for("bear_researcher"))
+        research_manager_node = create_research_manager(self.llm_for("research_manager"))
+        trader_node = create_trader(self.llm_for("trader"))
 
         # Create risk analysis nodes
-        aggressive_analyst = create_aggressive_debator(self.quick_thinking_llm)
-        neutral_analyst = create_neutral_debator(self.quick_thinking_llm)
-        conservative_analyst = create_conservative_debator(self.quick_thinking_llm)
-        portfolio_manager_node = create_portfolio_manager(self.deep_thinking_llm)
+        aggressive_analyst = create_aggressive_debator(self.llm_for("aggressive_debator"))
+        neutral_analyst = create_neutral_debator(self.llm_for("neutral_debator"))
+        conservative_analyst = create_conservative_debator(self.llm_for("conservative_debator"))
+        portfolio_manager_node = create_portfolio_manager(self.llm_for("portfolio_manager"))
 
         # Create workflow
         workflow = StateGraph(AgentState)

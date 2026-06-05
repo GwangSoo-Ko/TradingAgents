@@ -48,6 +48,18 @@ from .propagation import Propagator
 from .reflection import Reflector
 from .signal_processing import SignalProcessor
 
+# Roles that synthesize the debates (the two judges) default to the deep tier;
+# every other role defaults to the quick tier. The role->model resolver uses this
+# to pick a tier-default model for any role that role_models does not specify.
+DEEP_ROLES = frozenset({"research_manager", "portfolio_manager"})
+
+# Canonical graph role keys that can take a per-role model via role_models.
+ROLE_KEYS = frozenset({
+    "market_analyst", "sentiment_analyst", "news_analyst", "fundamentals_analyst",
+    "bull_researcher", "bear_researcher", "research_manager", "trader",
+    "aggressive_debator", "conservative_debator", "neutral_debator", "portfolio_manager",
+})
+
 
 class TradingAgentsGraph:
     """Main class that orchestrates the trading agents framework."""
@@ -78,28 +90,13 @@ class TradingAgentsGraph:
         os.makedirs(self.config["data_cache_dir"], exist_ok=True)
         os.makedirs(self.config["results_dir"], exist_ok=True)
 
-        # Initialize LLMs with provider-specific thinking configuration
-        llm_kwargs = self._get_provider_kwargs()
-
-        # Add callbacks to kwargs if provided (passed to LLM constructor)
-        if self.callbacks:
-            llm_kwargs["callbacks"] = self.callbacks
-
-        deep_client = create_llm_client(
-            provider=self.config["llm_provider"],
-            model=self.config["deep_think_llm"],
-            base_url=self.config.get("backend_url"),
-            **llm_kwargs,
-        )
-        quick_client = create_llm_client(
-            provider=self.config["llm_provider"],
-            model=self.config["quick_think_llm"],
-            base_url=self.config.get("backend_url"),
-            **llm_kwargs,
-        )
-
-        self.deep_thinking_llm = deep_client.get_llm()
-        self.quick_thinking_llm = quick_client.get_llm()
+        # Per-role LLM resolution with client dedup. role_models (when set) maps a
+        # role to its own provider/model; unset roles fall back to the quick/deep
+        # tier defaults below, so an unconfigured run behaves exactly as before.
+        # The Reflector / SignalProcessor reuse the quick tier client.
+        self._llm_cache = {}
+        self.deep_thinking_llm = self._llm_for_tier("deep")
+        self.quick_thinking_llm = self._llm_for_tier("quick")
         
         self.memory_log = TradingMemoryLog(self.config)
 
@@ -112,8 +109,7 @@ class TradingAgentsGraph:
             max_risk_discuss_rounds=self.config["max_risk_discuss_rounds"],
         )
         self.graph_setup = GraphSetup(
-            self.quick_thinking_llm,
-            self.deep_thinking_llm,
+            self._llm_for,
             self.tool_nodes,
             self.conditional_logic,
             analyst_concurrency_limit=self.config.get("analyst_concurrency_limit", 1),
@@ -163,6 +159,80 @@ class TradingAgentsGraph:
             kwargs["temperature"] = float(temperature)
 
         return kwargs
+
+    def _provider_kwargs_for(self, spec: Dict[str, Any]) -> Dict[str, Any]:
+        """Thinking/sampling kwargs for a role_models spec (per-spec wins, else
+        run-level). Vertex providers get only sampling kwargs in v1 — their
+        thinking-config param names are pending live SDK verification and the
+        Vertex clients forward a minimal kwarg set."""
+        provider = str(spec.get("provider", "")).lower()
+        kwargs: Dict[str, Any] = {}
+        if provider == "google":
+            level = spec.get("google_thinking_level", self.config.get("google_thinking_level"))
+            if level:
+                kwargs["thinking_level"] = level
+        elif provider == "openai":
+            effort = spec.get("openai_reasoning_effort", self.config.get("openai_reasoning_effort"))
+            if effort:
+                kwargs["reasoning_effort"] = effort
+        elif provider == "anthropic":
+            eff = spec.get("anthropic_effort", self.config.get("anthropic_effort"))
+            if eff:
+                kwargs["effort"] = eff
+        temperature = spec.get("temperature", self.config.get("temperature"))
+        if temperature is not None and temperature != "":
+            kwargs["temperature"] = float(temperature)
+        return kwargs
+
+    def _base_url_for(self, provider: str) -> Optional[str]:
+        """Base URL for a provider. None for vertex_* (Gemini/Claude use
+        project+location; the Grok client builds its own endpoints/openapi URL);
+        the run-level backend_url otherwise (single-provider vendor-direct runs)."""
+        if str(provider).lower().startswith("vertex_"):
+            return None
+        return self.config.get("backend_url")
+
+    def _build_cached(self, provider, model, location, kwargs):
+        """Build (or reuse) the LLM for a (provider, model, location, kwargs) key.
+
+        Roles sharing a spec share one client — the two Claude judges, the two
+        Gemini debaters, the two Grok debaters each build a single client (one
+        Vertex OAuth token fetch), and unspecified roles reuse the quick tier.
+        Callbacks are run-global and excluded from the key but passed to the build.
+        """
+        build_kwargs = dict(kwargs)
+        if str(provider).lower().startswith("vertex_"):
+            build_kwargs["project"] = self.config.get("vertex_project")
+            build_kwargs["location"] = location
+        key = (str(provider).lower(), model, location, frozenset(build_kwargs.items()))
+        if key not in self._llm_cache:
+            if self.callbacks:
+                build_kwargs["callbacks"] = self.callbacks
+            self._llm_cache[key] = create_llm_client(
+                provider, model, base_url=self._base_url_for(provider), **build_kwargs
+            ).get_llm()
+        return self._llm_cache[key]
+
+    def _llm_for_tier(self, tier: str):
+        """Build the tier-default LLM (the backward-compatible quick/deep path)."""
+        provider = self.config["llm_provider"]
+        model = (
+            self.config["deep_think_llm"] if tier == "deep"
+            else self.config["quick_think_llm"]
+        )
+        kwargs = self._get_provider_kwargs()
+        location = self.config.get("vertex_location")
+        return self._build_cached(provider, model, location, kwargs)
+
+    def _llm_for(self, role: str):
+        """Resolve the LLM for a graph role. Falls back to the quick/deep tier
+        default when role_models is unset or omits the role (backward compatible)."""
+        spec = (self.config.get("role_models") or {}).get(role)
+        if spec is None:
+            return self._llm_for_tier("deep" if role in DEEP_ROLES else "quick")
+        kwargs = self._provider_kwargs_for(spec)
+        location = spec.get("location") or self.config.get("vertex_location")
+        return self._build_cached(spec["provider"], spec["model"], location, kwargs)
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:
         """Create tool nodes for different data sources using abstract methods."""
