@@ -50,6 +50,18 @@ def create_llm_client(
         from .google_client import GoogleClient
         return GoogleClient(model, base_url, **kwargs)
 
+    if provider_lower == "vertex_gemini":
+        from .vertex_clients import VertexGeminiClient
+        return VertexGeminiClient(model, base_url, **kwargs)
+
+    if provider_lower == "vertex_anthropic":
+        from .vertex_clients import VertexAnthropicClient
+        return VertexAnthropicClient(model, base_url, **kwargs)
+
+    if provider_lower == "vertex_grok":
+        from .vertex_clients import VertexGrokClient
+        return VertexGrokClient(model, base_url, **kwargs)
+
     if provider_lower == "azure":
         from .azure_client import AzureOpenAIClient
         return AzureOpenAIClient(model, base_url, **kwargs)
