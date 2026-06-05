@@ -33,6 +33,7 @@ from cli.models import AnalystType
 from cli.utils import *
 from cli.announcements import fetch_announcements, display_announcements
 from cli.stats_handler import StatsCallbackHandler
+from cli.presets import apply_vertex_multimodel_config
 
 console = Console()
 
@@ -572,6 +573,9 @@ def get_user_selections():
     # The backend URL comes from TRADINGAGENTS_LLM_BACKEND_URL when set,
     # otherwise the provider's default endpoint — the same value the menu
     # would have picked.
+    is_vertex_multimodel = False
+    vertex_project = None
+    vertex_location = None
     provider_from_env = bool(os.environ.get("TRADINGAGENTS_LLM_PROVIDER"))
     if provider_from_env:
         selected_llm_provider = DEFAULT_CONFIG["llm_provider"].lower()
@@ -603,13 +607,35 @@ def get_user_selections():
         if selected_llm_provider == "ollama":
             confirm_ollama_endpoint(backend_url)
 
+        is_vertex_multimodel = selected_llm_provider == "vertex_model_garden"
+        if is_vertex_multimodel:
+            console.print(
+                create_question_box(
+                    "Vertex AI Configuration",
+                    "GCP project + location for Model Garden (ADC auth, no API key)",
+                )
+            )
+            vertex_project, vertex_location = ask_vertex_config()
+            console.print(
+                "[yellow]Multi-model debate uses 3 distinct Vertex models "
+                "(incl. Claude Opus judges): slower and more expensive than a "
+                "single model — debate rounds multiply the cost.[/yellow]"
+            )
+
         # Confirm the provider's API key is present; prompt the user to paste
         # one and persist it to .env if it's missing, so the analysis run
         # doesn't fail later at the first API call.
         ensure_api_key(selected_llm_provider)
 
     # Step 7: Thinking agents (skipped when either model is set via environment)
-    if os.environ.get("TRADINGAGENTS_QUICK_THINK_LLM") or os.environ.get("TRADINGAGENTS_DEEP_THINK_LLM"):
+    if is_vertex_multimodel:
+        selected_shallow_thinker = "gemini-3.5-flash"
+        selected_deep_thinker = "gemini-3.5-flash"
+        console.print(
+            "[green]✓ Vertex multi-model debate preset selected "
+            "(per-role models applied; analysts/trader default to Gemini).[/green]"
+        )
+    elif os.environ.get("TRADINGAGENTS_QUICK_THINK_LLM") or os.environ.get("TRADINGAGENTS_DEEP_THINK_LLM"):
         selected_shallow_thinker = DEFAULT_CONFIG["quick_think_llm"]
         selected_deep_thinker = DEFAULT_CONFIG["deep_think_llm"]
         console.print(
@@ -678,6 +704,9 @@ def get_user_selections():
         "anthropic_effort": anthropic_effort,
         "output_language": output_language,
         "enable_kr_sources": enable_kr_sources,
+        "enable_vertex_multimodel": is_vertex_multimodel,
+        "vertex_project": vertex_project,
+        "vertex_location": vertex_location,
     }
 
 
@@ -1012,6 +1041,9 @@ def run_analysis(checkpoint: bool = False):
     config["anthropic_effort"] = selections.get("anthropic_effort")
     config["output_language"] = selections.get("output_language", "English")
     config["checkpoint_enabled"] = checkpoint
+
+    # Vertex multi-model debate preset (no-op unless that provider was selected).
+    apply_vertex_multimodel_config(config, selections)
 
     # Opt-in Korean data sources (only offered for KR tickers). Routes news to
     # Naver and fundamentals to wisereport+OpenDART (both fall back to yfinance

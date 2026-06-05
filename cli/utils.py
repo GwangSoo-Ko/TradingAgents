@@ -355,6 +355,7 @@ def _llm_provider_table() -> list[tuple[str, str, str | None]]:
     return [
         ("OpenAI", "openai", "https://api.openai.com/v1"),
         ("Google", "google", None),
+        ("Vertex Model Garden (multi-model debate)", "vertex_model_garden", None),
         ("Anthropic", "anthropic", "https://api.anthropic.com/"),
         ("xAI", "xai", "https://api.x.ai/v1"),
         ("DeepSeek", "deepseek", "https://api.deepseek.com"),
@@ -374,6 +375,25 @@ def provider_default_url(provider_key: str) -> str | None:
         if pk == key:
             return url
     return None
+
+
+def ask_vertex_config() -> tuple[str, str]:
+    """Prompt for the Vertex AI project and location (multi-model debate mode).
+
+    Credentials come from ADC / GOOGLE_APPLICATION_CREDENTIALS, not an API key,
+    so no key prompt is needed here.
+    """
+    project = questionary.text(
+        "Enter your GCP project ID for Vertex AI:",
+        default=os.environ.get("GOOGLE_CLOUD_PROJECT", ""),
+        validate=lambda x: len(x.strip()) > 0 or "Please enter a project ID.",
+    ).ask().strip()
+    location = questionary.text(
+        "Enter the Vertex AI location:",
+        default=os.environ.get("GOOGLE_CLOUD_LOCATION", "global"),
+        validate=lambda x: len(x.strip()) > 0 or "Please enter a location.",
+    ).ask().strip()
+    return project, location
 
 
 def select_llm_provider() -> tuple[str, str | None]:
