@@ -52,8 +52,9 @@ class TestNaverNewsParsing:
 @pytest.mark.unit
 class TestNaverNewsVendor:
     def test_non_kr_ticker_raises_for_fallthrough(self):
-        # Must raise (not return) so route_to_vendor tries the next vendor.
-        with pytest.raises(ValueError):
+        # Must raise NoMarketDataError so route_to_vendor quiet-skips to the
+        # next vendor (plain ValueError would emit a spurious WARNING instead).
+        with pytest.raises(NoMarketDataError):
             get_news("AAPL", "2026-05-25", "2026-06-02")
 
     def test_returns_korean_news_in_window(self):

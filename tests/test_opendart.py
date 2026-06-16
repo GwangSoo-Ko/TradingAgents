@@ -78,9 +78,9 @@ class TestCorpCodeMapping:
 @pytest.mark.unit
 class TestGetFundamentals:
     def test_non_kr_raises_for_fallthrough(self, monkeypatch):
-        monkeypatch.setattr(fund, "corp_code_for",
-                            lambda t: (_ for _ in ()).throw(ValueError("not KR")))
-        with pytest.raises(ValueError):
+        # Upfront is_kr_ticker guard fires before corp_code_for; must raise
+        # NoMarketDataError so route_to_vendor quiet-skips to the next vendor.
+        with pytest.raises(NoMarketDataError):
             get_fundamentals("AAPL")
 
     def test_renders_headline_figures(self, monkeypatch):

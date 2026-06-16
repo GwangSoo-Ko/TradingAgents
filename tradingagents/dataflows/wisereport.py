@@ -100,11 +100,11 @@ def _wisereport_section(code: str) -> str:
 
 def get_fundamentals(ticker: str, curr_date: str | None = None) -> str:
     """Complete KR fundamentals: OpenDART audited actuals + wisereport forward
-    estimates / consensus. Raises ValueError for non-KR (dispatcher falls
-    through); NoMarketDataError when neither source yields data.
+    estimates / consensus. Raises NoMarketDataError for non-KR (dispatcher
+    falls through); NoMarketDataError when neither source yields data.
     """
     if not is_kr_ticker(ticker):
-        raise ValueError(f"wisereport vendor only serves Korean tickers, got {ticker!r}")
+        raise NoMarketDataError(ticker, detail="wisereport only serves Korean tickers")
     code = to_krx_code(ticker)
 
     # Audited actuals + balance sheet from OpenDART (best-effort; needs DART_API_KEY).

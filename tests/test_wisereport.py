@@ -53,7 +53,9 @@ class TestGetFundamentals:
             text=_FIN_HTML if "cF1002" in url else _MAIN_HTML))
 
     def test_non_kr_raises(self):
-        with pytest.raises(ValueError):
+        # Must raise NoMarketDataError so route_to_vendor quiet-skips to the
+        # next vendor (plain ValueError would emit a spurious WARNING instead).
+        with pytest.raises(NoMarketDataError):
             get_fundamentals("AAPL")
 
     def test_merges_opendart_and_wisereport(self, monkeypatch):

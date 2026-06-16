@@ -20,6 +20,7 @@ import zipfile
 from pathlib import Path
 
 from .config import get_config
+from .errors import VendorNotConfiguredError
 from .kr_utils import to_krx_code
 from .rate_limit import safe_get
 from .symbol_utils import NoMarketDataError
@@ -33,9 +34,11 @@ _CORP_CODE_URL = f"{_BASE}/corpCode.xml"
 _CORP_MAP: dict[str, str] | None = None
 
 
-class OpenDartNotConfiguredError(ValueError):
-    """Raised when DART_API_KEY is absent. Subclasses ValueError so
-    route_to_vendor's generic except catches it and skips to the next vendor."""
+class OpenDartNotConfiguredError(VendorNotConfiguredError):
+    """Raised when DART_API_KEY is absent. Subclasses VendorNotConfiguredError
+    so route_to_vendor quiet-skips it as "vendor unavailable". Also inherits
+    ValueError (via VendorNotConfiguredError) so existing except-ValueError
+    callers keep working."""
 
 
 def get_api_key() -> str:

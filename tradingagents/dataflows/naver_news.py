@@ -51,14 +51,14 @@ def get_news(ticker: str, start_date: str, end_date: str) -> str:
     """Per-ticker Korean news from Naver Finance for a KOSPI/KOSDAQ ticker.
 
     Returns the same markdown shape as the yfinance/alpha_vantage news vendors.
-    Raises ``ValueError`` for non-Korean tickers (dispatcher tries the next
-    vendor) and ``NoMarketDataError`` when no article falls within
+    Raises ``NoMarketDataError`` for non-Korean tickers (dispatcher tries the
+    next vendor) and ``NoMarketDataError`` when no article falls within
     ``[start_date, end_date]`` (so a ``"naver,yfinance"`` chain falls back to
     yfinance). Articles dated after ``end_date`` are never surfaced
     (look-ahead safety).
     """
     if not is_kr_ticker(ticker):
-        raise ValueError(f"naver vendor only serves Korean tickers, got {ticker!r}")
+        raise NoMarketDataError(ticker, detail="naver vendor only serves Korean (.KS/.KQ) tickers")
     code = to_krx_code(ticker)
 
     limit = get_config().get("news_article_limit", 20)
