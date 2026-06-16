@@ -13,8 +13,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from tradingagents.dataflows.stocktwits import fetch_stocktwits_messages
 from tradingagents.agents.utils.agent_utils import build_instrument_context
+from tradingagents.dataflows.stocktwits import fetch_stocktwits_messages
 
 
 @pytest.mark.unit
@@ -87,8 +87,9 @@ class TestNameTickerDisplay:
         assert "report headings and prose" not in ctx
 
     def test_display_label(self):
-        import tradingagents.agents.utils.agent_utils as au
         from unittest.mock import patch
+
+        import tradingagents.agents.utils.agent_utils as au
         with patch.object(au, "resolve_instrument_identity",
                           return_value={"company_name": "Apple Inc."}):
             assert au.instrument_display_label("AAPL") == "Apple Inc. (AAPL)"

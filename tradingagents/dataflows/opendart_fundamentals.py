@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Optional
 
 from .opendart_common import corp_code_for, dart_get
 from .symbol_utils import NoMarketDataError
@@ -35,7 +34,7 @@ _WANTED = {
 }
 
 
-def _latest_available_fiscal_year(curr_date: Optional[str]) -> int:
+def _latest_available_fiscal_year(curr_date: str | None) -> int:
     """Most recent fiscal year whose annual report is filed by ``curr_date``.
 
     Annual reports land by ~end of March; before April we can't yet rely on the
@@ -53,7 +52,7 @@ def _fmt(amount: str) -> str:
     return (amount or "").strip() or "N/A"
 
 
-def get_fundamentals(ticker: str, curr_date: Optional[str] = None) -> str:
+def get_fundamentals(ticker: str, curr_date: str | None = None) -> str:
     """Audited KR fundamentals (key BS/IS figures) for a Korean ticker.
 
     Raises ValueError for non-KR tickers (dispatcher falls through) and

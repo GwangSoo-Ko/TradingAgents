@@ -12,7 +12,10 @@ import pytest
 
 from tradingagents.dataflows import ticker_resolver as tr
 from tradingagents.dataflows.ticker_resolver import (
-    Candidate, looks_like_ticker, resolve_query, _llm_normalize,
+    Candidate,
+    _llm_normalize,
+    looks_like_ticker,
+    resolve_query,
 )
 
 

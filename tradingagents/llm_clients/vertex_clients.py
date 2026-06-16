@@ -14,7 +14,7 @@ is deferred until param names are confirmed against a live project.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from . import vertex_auth
 from .base_client import BaseLLMClient, normalize_content
@@ -57,10 +57,10 @@ class _VertexClientBase(BaseLLMClient):
     def __init__(
         self,
         model: str,
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
         *,
-        project: Optional[str] = None,
-        location: Optional[str] = None,
+        project: str | None = None,
+        location: str | None = None,
         **kwargs,
     ):
         super().__init__(model, base_url, **kwargs)

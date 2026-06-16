@@ -47,7 +47,7 @@ class TestApplyVertexConfig:
         assert cfg["role_models"] is None
 
     def test_applies_preset_and_vertex_config(self):
-        from cli.presets import apply_vertex_multimodel_config, VERTEX_DEBATE_PRESET
+        from cli.presets import VERTEX_DEBATE_PRESET, apply_vertex_multimodel_config
         cfg = {"llm_provider": "openai", "role_models": None}
         apply_vertex_multimodel_config(cfg, {
             "enable_vertex_multimodel": True,

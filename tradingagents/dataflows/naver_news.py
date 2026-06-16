@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Optional
 
 from .config import get_config
 from .kr_utils import is_kr_ticker, to_krx_code
@@ -31,7 +30,7 @@ logger = logging.getLogger(__name__)
 _NEWS_API = "https://m.stock.naver.com/api/news/stock/{code}"
 
 
-def _parse_naver_datetime(raw) -> Optional[datetime]:
+def _parse_naver_datetime(raw) -> datetime | None:
     """Naver article ``datetime`` is ``"YYYYMMDDHHMM"`` — take the date part."""
     try:
         return datetime.strptime(str(raw)[:8], "%Y%m%d")

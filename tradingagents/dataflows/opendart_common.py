@@ -18,7 +18,6 @@ import os
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
-from typing import Dict, Optional
 
 from .config import get_config
 from .kr_utils import to_krx_code
@@ -31,7 +30,7 @@ _BASE = "https://opendart.fss.or.kr/api"
 _CORP_CODE_URL = f"{_BASE}/corpCode.xml"
 
 # Parsed {stock_code(6-digit) -> corp_code(8-digit)} cached for the process.
-_CORP_MAP: Optional[Dict[str, str]] = None
+_CORP_MAP: dict[str, str] | None = None
 
 
 class OpenDartNotConfiguredError(ValueError):
@@ -58,7 +57,7 @@ def _corp_code_zip_path() -> Path:
     return p / "opendart_corpcode.zip"
 
 
-def _load_corp_map() -> Dict[str, str]:
+def _load_corp_map() -> dict[str, str]:
     """Download (once, cached) and parse the corpCode.xml mapping."""
     global _CORP_MAP
     if _CORP_MAP is not None:
@@ -69,7 +68,7 @@ def _load_corp_map() -> Dict[str, str]:
         resp = safe_get(_CORP_CODE_URL, params={"crtfc_key": get_api_key()}, timeout=30.0)
         zip_path.write_bytes(resp.content)
 
-    mapping: Dict[str, str] = {}
+    mapping: dict[str, str] = {}
     with zipfile.ZipFile(io.BytesIO(zip_path.read_bytes())) as z:
         xml_bytes = z.read(z.namelist()[0])
     # XXE / billion-laughs hardening without a new dependency: a legitimate

@@ -5,14 +5,14 @@ unit-testable without importing the interactive CLI.
 """
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 # Vertex Model Garden multi-model debate (Gemini / Claude / Grok), all on the
 # Vertex `global` endpoint. Judges (research_manager, portfolio_manager) run on
 # Claude; the five debate roles are diversified across the three families; the
 # four analysts and the trader are omitted and fall back to the quick-tier
 # default (Gemini) via the role->model resolver.
-VERTEX_DEBATE_PRESET: Dict[str, Dict[str, str]] = {
+VERTEX_DEBATE_PRESET: dict[str, dict[str, str]] = {
     "bull_researcher":      {"provider": "vertex_gemini",    "model": "gemini-3.5-flash"},
     "bear_researcher":      {"provider": "vertex_grok",      "model": "xai/grok-4.3"},
     "aggressive_debator":   {"provider": "vertex_grok",      "model": "xai/grok-4.3"},
@@ -28,8 +28,8 @@ VERTEX_DEFAULT_MODEL = "gemini-3.5-flash"
 
 
 def apply_vertex_multimodel_config(
-    config: Dict[str, Any], selections: Dict[str, Any]
-) -> Dict[str, Any]:
+    config: dict[str, Any], selections: dict[str, Any]
+) -> dict[str, Any]:
     """Apply the Vertex multi-model debate preset to ``config`` in place.
 
     No-op unless ``selections['enable_vertex_multimodel']`` is truthy, so any
@@ -51,15 +51,15 @@ def apply_vertex_multimodel_config(
 # the CLI provider key -> the fixed model the whole pipeline runs on. Lets users
 # without an Anthropic/xAI API key run a normal single-model analysis on a
 # Vertex-hosted Claude or Grok. The provider key IS the real vertex_* client key.
-VERTEX_SINGLE_MODELS: Dict[str, str] = {
+VERTEX_SINGLE_MODELS: dict[str, str] = {
     "vertex_anthropic": "claude-opus-4-8",
     "vertex_grok":      "xai/grok-4.3",
 }
 
 
 def apply_vertex_single_model_config(
-    config: Dict[str, Any], selections: Dict[str, Any]
-) -> Dict[str, Any]:
+    config: dict[str, Any], selections: dict[str, Any]
+) -> dict[str, Any]:
     """Apply a single-model Vertex run (Claude or Grok) to ``config`` in place.
 
     No-op unless ``selections['vertex_single_provider']`` is one of

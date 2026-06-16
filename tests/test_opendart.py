@@ -8,11 +8,11 @@ import os
 
 import pytest
 
-from tradingagents.dataflows import opendart_common as common
-from tradingagents.dataflows import opendart_fundamentals as fund
+from tradingagents.dataflows import opendart_common as common, opendart_fundamentals as fund
 from tradingagents.dataflows.opendart_common import OpenDartNotConfiguredError, get_api_key
 from tradingagents.dataflows.opendart_fundamentals import (
-    get_fundamentals, _latest_available_fiscal_year,
+    _latest_available_fiscal_year,
+    get_fundamentals,
 )
 from tradingagents.dataflows.symbol_utils import NoMarketDataError
 
@@ -60,7 +60,8 @@ class TestCorpCodeMapping:
 
     def test_doctype_guard_rejects_entity_xml(self, monkeypatch, tmp_path):
         # _load_corp_map must reject a DTD/ENTITY payload (XXE/billion-laughs).
-        import io, zipfile
+        import io
+        import zipfile
         malicious = b'<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "boom">]><result></result>'
         zbuf = io.BytesIO()
         with zipfile.ZipFile(zbuf, "w") as z:

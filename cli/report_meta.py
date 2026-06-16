@@ -6,7 +6,7 @@ models used.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict
+from typing import Any
 
 # Pipeline order, for a readable per-role table.
 _ROLE_ORDER = [
@@ -22,7 +22,7 @@ def _sanitize(value: str) -> str:
     return cleaned.strip("-") or "unknown"
 
 
-def analysis_mode_tag(config: Dict[str, Any]) -> str:
+def analysis_mode_tag(config: dict[str, Any]) -> str:
     """Short, filesystem-safe tag describing how a run was configured.
 
     Multi-model (``role_models`` set) -> ``"vertex-multimodel"`` when every role's
@@ -40,7 +40,7 @@ def analysis_mode_tag(config: Dict[str, Any]) -> str:
     return _sanitize(f"{provider}-{deep}" if (provider or deep) else "single")
 
 
-def _resolved_role(config: Dict[str, Any], role: str):
+def _resolved_role(config: dict[str, Any], role: str):
     """Return (provider, model) for a role: its role_models spec, else the tier
     default (deep model for the two judges, quick model otherwise)."""
     spec = (config.get("role_models") or {}).get(role)
@@ -54,7 +54,7 @@ def _resolved_role(config: Dict[str, Any], role: str):
     return provider, model, True
 
 
-def analysis_config_block(config: Dict[str, Any]) -> str:
+def analysis_config_block(config: dict[str, Any]) -> str:
     """Markdown block for the report header: analysis mode + the models used.
 
     Multi-model runs get a full 12-role table (roles not in the preset are marked

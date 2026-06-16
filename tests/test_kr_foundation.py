@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
-from tradingagents.dataflows.kr_utils import is_kr_ticker, to_krx_code
 from tradingagents.dataflows import rate_limit
+from tradingagents.dataflows.kr_utils import is_kr_ticker, to_krx_code
 from tradingagents.dataflows.rate_limit import RateBucket, safe_get
 
 
@@ -90,6 +90,6 @@ class TestSafeGet:
     def test_raises_after_exhausting_retries(self):
         with patch.object(rate_limit.requests, "get",
                           side_effect=rate_limit.requests.RequestException("boom")), \
-             patch("tradingagents.dataflows.rate_limit.time.sleep"):
-            with pytest.raises(rate_limit.requests.RequestException):
-                safe_get("https://example.com", max_retries=2)
+             patch("tradingagents.dataflows.rate_limit.time.sleep"), \
+             pytest.raises(rate_limit.requests.RequestException):
+            safe_get("https://example.com", max_retries=2)

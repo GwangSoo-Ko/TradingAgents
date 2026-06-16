@@ -1,5 +1,7 @@
 from datetime import datetime
-from .alpha_vantage_common import _make_api_request, _filter_csv_by_date_range
+
+from .alpha_vantage_common import _filter_csv_by_date_range, _make_api_request
+
 
 def get_stock(
     symbol: str,
@@ -47,8 +49,9 @@ def get_latest_close_on_or_before(symbol: str, on_or_before: str):
     row is available. Raises ``AlphaVantageNotConfiguredError`` when no API key is
     set (callers treat that as "cross-check unavailable").
     """
-    import pandas as pd
     from io import StringIO
+
+    import pandas as pd
 
     params = {"symbol": symbol, "outputsize": "compact", "datatype": "csv"}
     csv_data = _make_api_request("TIME_SERIES_DAILY", params)

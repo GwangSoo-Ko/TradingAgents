@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import List, NamedTuple
+from typing import NamedTuple
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def looks_like_ticker(query: str) -> bool:
     return bool(q) and " " not in q and bool(_TICKER_RE.match(q))
 
 
-def _search_yf(term: str, limit: int) -> List[Candidate]:
+def _search_yf(term: str, limit: int) -> list[Candidate]:
     """Grounded candidate search via yfinance. Returns [] on any failure."""
     try:
         import yfinance as yf
@@ -63,7 +63,7 @@ def _search_yf(term: str, limit: int) -> List[Candidate]:
         logger.warning("yfinance Search failed for %r: %s", term, exc)
         return []
 
-    out: List[Candidate] = []
+    out: list[Candidate] = []
     for q in quotes:
         symbol = (q.get("symbol") or "").strip()
         if not symbol:
@@ -79,7 +79,7 @@ def _search_yf(term: str, limit: int) -> List[Candidate]:
     return out
 
 
-def _llm_normalize(query: str, llm) -> List[str]:
+def _llm_normalize(query: str, llm) -> list[str]:
     """Ask the LLM to turn fuzzy/foreign input into clean company-name search
     terms. Returns [] on any failure. The LLM is told to emit NAMES, not
     tickers — tickers are resolved by the grounded search afterwards.
@@ -107,7 +107,7 @@ def _llm_normalize(query: str, llm) -> List[str]:
         return []
 
 
-def _dedup(cands: List[Candidate]) -> List[Candidate]:
+def _dedup(cands: list[Candidate]) -> list[Candidate]:
     seen, out = set(), []
     for c in cands:
         key = c.symbol.upper()
@@ -118,7 +118,7 @@ def _dedup(cands: List[Candidate]) -> List[Candidate]:
     return out
 
 
-def resolve_query(query: str, llm=None, limit: int = 8) -> List[Candidate]:
+def resolve_query(query: str, llm=None, limit: int = 8) -> list[Candidate]:
     """Resolve free-text ``query`` to a list of real ticker candidates.
 
     With ``llm`` supplied, fuzzy/foreign input that the grounded search can't

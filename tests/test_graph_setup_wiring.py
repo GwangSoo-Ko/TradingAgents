@@ -9,8 +9,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tradingagents.graph.setup import GraphSetup
 from tradingagents.graph.conditional_logic import ConditionalLogic
+from tradingagents.graph.setup import GraphSetup
 
 _ROLES = {
     "market_analyst", "sentiment_analyst", "news_analyst", "fundamentals_analyst",
@@ -35,5 +35,5 @@ def test_setup_graph_requests_each_role_and_compiles():
     workflow = setup.setup_graph(["market", "social", "news", "fundamentals"])
     # All 12 role nodes (analysts via factory lambdas, the rest eagerly) are
     # built during setup_graph, so every role key was requested.
-    assert _ROLES <= set(requested)
+    assert set(requested) >= _ROLES
     assert workflow.compile() is not None

@@ -14,7 +14,6 @@ import logging
 import random
 import threading
 import time
-from typing import Optional
 
 import requests
 
@@ -28,7 +27,7 @@ class RateBucket:
     :meth:`acquire` blocks until a token is available.
     """
 
-    def __init__(self, rate: float = 8.0, capacity: Optional[int] = None) -> None:
+    def __init__(self, rate: float = 8.0, capacity: int | None = None) -> None:
         self.rate = rate
         self.capacity = capacity if capacity is not None else int(rate)
         self._tokens = float(self.capacity)
@@ -60,11 +59,11 @@ DEFAULT_UA = "Mozilla/5.0 (compatible; tradingagents/0.2; +https://github.com/Ta
 def safe_get(
     url: str,
     *,
-    headers: Optional[dict] = None,
-    params: Optional[dict] = None,
+    headers: dict | None = None,
+    params: dict | None = None,
     timeout: float = 10.0,
     max_retries: int = 3,
-    bucket: Optional[RateBucket] = None,
+    bucket: RateBucket | None = None,
 ) -> requests.Response:
     """Rate-limited GET with exponential-backoff retry on HTTP 429 / errors.
 
@@ -79,7 +78,7 @@ def safe_get(
     if headers:
         hdrs.update(headers)
 
-    last_exc: Optional[Exception] = None
+    last_exc: Exception | None = None
     for attempt in range(max_retries):
         bucket.acquire()
         try:

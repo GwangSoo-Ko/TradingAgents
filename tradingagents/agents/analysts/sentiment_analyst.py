@@ -26,7 +26,6 @@ See: https://github.com/TauricResearch/TradingAgents/issues/796
 
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
 
 from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -71,7 +70,7 @@ def _maybe_fetch_kr_discussion(ticker: str) -> str:
         return ""
 
 
-def _resolve_company_name(ticker: str) -> Optional[str]:
+def _resolve_company_name(ticker: str) -> str | None:
     """Best-effort lookup of a ticker's company name via yfinance.
 
     Used by the Reddit fetcher to expand recall: short tickers (NTRA,

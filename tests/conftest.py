@@ -32,8 +32,31 @@ _API_KEY_ENV_VARS = (
 
 @pytest.fixture(autouse=True)
 def _dummy_api_keys(monkeypatch):
+    # `or "placeholder"` (not a get default) so an env var present-but-EMPTY in a
+    # local .env (e.g. `OPENAI_API_KEY=`) is still stubbed — otherwise the empty
+    # string survives and providers that now reject empty keys (upstream's
+    # registry-based OpenAIClient) fail with "API key not set" during tests.
     for env_var in _API_KEY_ENV_VARS:
-        monkeypatch.setenv(env_var, os.environ.get(env_var, "placeholder"))
+        monkeypatch.setenv(env_var, os.environ.get(env_var) or "placeholder")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_config():
+    """Reset the global dataflows config before and after each test.
+
+    ``set_config`` merges (it never clears keys absent from the override), so a
+    test that sets e.g. ``tool_vendors`` would otherwise leak into later tests
+    and make routing behavior order-dependent. Replace the global outright so
+    every test starts from a clean DEFAULT_CONFIG.
+    """
+    import copy
+
+    import tradingagents.dataflows.config as config_module
+    import tradingagents.default_config as default_config
+
+    config_module._config = copy.deepcopy(default_config.DEFAULT_CONFIG)
+    yield
+    config_module._config = copy.deepcopy(default_config.DEFAULT_CONFIG)
 
 
 @pytest.fixture()

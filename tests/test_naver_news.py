@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from tradingagents.dataflows import naver_news
-from tradingagents.dataflows.naver_news import get_news, _parse_naver_datetime, _flatten_items
+from tradingagents.dataflows.naver_news import _flatten_items, _parse_naver_datetime, get_news
 from tradingagents.dataflows.symbol_utils import NoMarketDataError
 
 
@@ -66,14 +66,14 @@ class TestNaverNewsVendor:
 
     def test_filters_out_of_window_and_future(self):
         # Article dated 2026-06-01; window ends 2026-05-30 -> nothing in window.
-        with patch.object(naver_news, "safe_get", return_value=_mock_resp(_sample_payload("20260601"))):
-            with pytest.raises(NoMarketDataError):
-                get_news("005930.KS", "2026-05-20", "2026-05-30")
+        with patch.object(naver_news, "safe_get", return_value=_mock_resp(_sample_payload("20260601"))), \
+             pytest.raises(NoMarketDataError):
+            get_news("005930.KS", "2026-05-20", "2026-05-30")
 
     def test_empty_payload_raises_no_market_data(self):
-        with patch.object(naver_news, "safe_get", return_value=_mock_resp([])):
-            with pytest.raises(NoMarketDataError):
-                get_news("247540.KQ", "2026-05-25", "2026-06-02")
+        with patch.object(naver_news, "safe_get", return_value=_mock_resp([])), \
+             pytest.raises(NoMarketDataError):
+            get_news("247540.KQ", "2026-05-25", "2026-06-02")
 
     def test_bare_six_digit_code_accepted(self):
         with patch.object(naver_news, "safe_get", return_value=_mock_resp(_sample_payload("20260601"))):

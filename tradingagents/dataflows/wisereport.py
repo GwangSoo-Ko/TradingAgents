@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Optional
 
 from bs4 import BeautifulSoup
 
@@ -59,7 +58,7 @@ def _parse_financials(html: str) -> list[dict]:
     return rows
 
 
-def _parse_consensus(html: str) -> Optional[dict]:
+def _parse_consensus(html: str) -> dict | None:
     """Parse the analyst-consensus block (opinion, target price, fwd EPS/PER, #firms)."""
     text = re.sub(r"\s+", " ", BeautifulSoup(html, "html.parser").get_text(" ", strip=True))
     m = re.search(
@@ -99,7 +98,7 @@ def _wisereport_section(code: str) -> str:
     return "\n".join(out)
 
 
-def get_fundamentals(ticker: str, curr_date: Optional[str] = None) -> str:
+def get_fundamentals(ticker: str, curr_date: str | None = None) -> str:
     """Complete KR fundamentals: OpenDART audited actuals + wisereport forward
     estimates / consensus. Raises ValueError for non-KR (dispatcher falls
     through); NoMarketDataError when neither source yields data.

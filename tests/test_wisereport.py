@@ -10,10 +10,12 @@ from types import SimpleNamespace
 import pytest
 
 from tradingagents.dataflows import wisereport as wr
-from tradingagents.dataflows.wisereport import (
-    get_fundamentals, _parse_financials, _parse_consensus,
-)
 from tradingagents.dataflows.symbol_utils import NoMarketDataError
+from tradingagents.dataflows.wisereport import (
+    _parse_consensus,
+    _parse_financials,
+    get_fundamentals,
+)
 
 _FIN_HTML = """
 <table>

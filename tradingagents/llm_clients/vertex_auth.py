@@ -10,13 +10,12 @@ JSON pointed at by GOOGLE_APPLICATION_CREDENTIALS — never a vendor API key.
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 _CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 _DEFAULT_LOCATION = "global"
 
 
-def resolve_project(explicit: Optional[str]) -> Optional[str]:
+def resolve_project(explicit: str | None) -> str | None:
     """Vertex project: explicit arg, else GOOGLE_CLOUD_PROJECT / GCLOUD_PROJECT."""
     return (
         explicit
@@ -25,7 +24,7 @@ def resolve_project(explicit: Optional[str]) -> Optional[str]:
     )
 
 
-def resolve_location(explicit: Optional[str]) -> str:
+def resolve_location(explicit: str | None) -> str:
     """Vertex location: explicit arg, else GOOGLE_CLOUD_LOCATION, else 'global'."""
     return explicit or os.environ.get("GOOGLE_CLOUD_LOCATION") or _DEFAULT_LOCATION
 

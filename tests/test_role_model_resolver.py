@@ -54,7 +54,7 @@ _BASE = {
 @pytest.mark.unit
 class TestBackwardCompatTierDefaults:
     def test_role_keys_and_deep_roles(self):
-        assert DEEP_ROLES == frozenset({"research_manager", "portfolio_manager"})
+        assert frozenset({"research_manager", "portfolio_manager"}) == DEEP_ROLES
         assert {"market_analyst", "trader", "bull_researcher"} <= ROLE_KEYS
 
     def test_unspecified_quick_roles_share_one_client(self, monkeypatch):
@@ -123,7 +123,7 @@ class TestRoleModelsPreset:
         assert providers.count("vertex_anthropic") == 1
 
     def test_unspecified_role_falls_back_to_quick_gemini(self, monkeypatch):
-        calls = _patch_factory(monkeypatch)
+        _patch_factory(monkeypatch)
         g = _graph(self._vertex_config())
         trader = g._llm_for("trader")
         bull = g._llm_for("bull_researcher")

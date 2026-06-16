@@ -136,7 +136,9 @@ class TestVertexClients:
     def test_validate_model_accepts_any(self, monkeypatch):
         _install_fake_vertexai(monkeypatch)
         from tradingagents.llm_clients.vertex_clients import (
-            VertexGeminiClient, VertexAnthropicClient, VertexGrokClient,
+            VertexAnthropicClient,
+            VertexGeminiClient,
+            VertexGrokClient,
         )
         assert VertexGeminiClient("anything").validate_model() is True
         assert VertexAnthropicClient("anything").validate_model() is True
@@ -146,7 +148,9 @@ class TestVertexClients:
         _install_fake_vertexai(monkeypatch)
         from tradingagents.llm_clients.factory import create_llm_client
         from tradingagents.llm_clients.vertex_clients import (
-            VertexGeminiClient, VertexAnthropicClient, VertexGrokClient,
+            VertexAnthropicClient,
+            VertexGeminiClient,
+            VertexGrokClient,
         )
         assert isinstance(
             create_llm_client("vertex_gemini", "gemini-3.5-flash", project="p"),

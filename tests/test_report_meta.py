@@ -1,7 +1,7 @@
 """Report metadata: analysis-mode tag (folder name) + config block (report header)."""
 import pytest
 
-from cli.report_meta import analysis_mode_tag, analysis_config_block
+from cli.report_meta import analysis_config_block, analysis_mode_tag
 
 
 @pytest.mark.unit
