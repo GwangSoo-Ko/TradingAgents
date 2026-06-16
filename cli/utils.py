@@ -488,17 +488,25 @@ def ask_vertex_config() -> tuple[str, str]:
     Credentials come from ADC / GOOGLE_APPLICATION_CREDENTIALS, not an API key,
     so no key prompt is needed here.
     """
+    # .ask() returns None on Ctrl-C/Esc; exit cleanly like the other required
+    # prompts instead of raising AttributeError on .strip().
     project = questionary.text(
         "Enter your GCP project ID for Vertex AI:",
         default=os.environ.get("GOOGLE_CLOUD_PROJECT", ""),
         validate=lambda x: len(x.strip()) > 0 or "Please enter a project ID.",
-    ).ask().strip()
+    ).ask()
+    if project is None:
+        console.print("\n[red]Cancelled. Exiting...[/red]")
+        exit(1)
     location = questionary.text(
         "Enter the Vertex AI location:",
         default=os.environ.get("GOOGLE_CLOUD_LOCATION", "global"),
         validate=lambda x: len(x.strip()) > 0 or "Please enter a location.",
-    ).ask().strip()
-    return project, location
+    ).ask()
+    if location is None:
+        console.print("\n[red]Cancelled. Exiting...[/red]")
+        exit(1)
+    return project.strip(), location.strip()
 
 
 def select_llm_provider() -> tuple[str, str | None]:
