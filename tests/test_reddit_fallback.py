@@ -190,3 +190,49 @@ class TestFormatterHandlesRssPosts:
         assert "1234↑" in out
         assert "56c" in out
         assert "via RSS" not in out
+
+
+class TestRedditCompanyNameSearch:
+    """Fork-unique company-name OR-search that widens recall for non-obvious tickers."""
+
+    def test_build_query_without_company_name_is_ticker_only(self):
+        assert reddit._build_query("NVDA", None) == ("NVDA", None)
+        assert reddit._build_query("NVDA", "") == ("NVDA", None)
+
+    def test_build_query_ors_in_sanitized_company_name(self):
+        assert reddit._build_query("NTRA", "Natera, Inc.") == ('NTRA OR "Natera"', "Natera")
+
+    def test_build_query_drops_name_redundant_with_ticker(self):
+        # A sanitized name equal to the ticker (case-insensitive) adds only noise.
+        assert reddit._build_query("VOO", "voo") == ("VOO", None)
+
+    def test_sanitize_strips_corporate_suffixes(self):
+        assert reddit._sanitize_company_name("Natera, Inc.") == "Natera"
+        assert reddit._sanitize_company_name("Apple Inc") == "Apple"
+        assert reddit._sanitize_company_name("Samsung Electronics Co., Ltd.") == "Samsung Electronics"
+        assert reddit._sanitize_company_name("Alphabet") == "Alphabet"  # no suffix -> unchanged
+
+    def test_company_name_threads_or_query_into_fetch(self):
+        captured = []
+
+        def fake_fetch(query, sub, limit, timeout):
+            captured.append(query)
+            return []
+
+        with patch.object(reddit, "_fetch_subreddit", side_effect=fake_fetch):
+            out = reddit.fetch_reddit_posts(
+                "NTRA", company_name="Natera, Inc.", subreddits=("stocks",), inter_request_delay=0
+            )
+        assert captured == ['NTRA OR "Natera"']  # the OR'd query reached the fetcher
+        assert "NTRA / Natera" in out            # the label shows both terms
+
+    def test_no_company_name_uses_bare_ticker_query(self):
+        captured = []
+
+        def fake_fetch(query, sub, limit, timeout):
+            captured.append(query)
+            return []
+
+        with patch.object(reddit, "_fetch_subreddit", side_effect=fake_fetch):
+            reddit.fetch_reddit_posts("NVDA", subreddits=("stocks",), inter_request_delay=0)
+        assert captured == ["NVDA"]
