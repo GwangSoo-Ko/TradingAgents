@@ -28,6 +28,8 @@ from cli.report_meta import analysis_mode_tag
 from cli.stats_handler import StatsCallbackHandler
 from cli.utils import (
     ask_anthropic_effort,
+    ask_anthropic_max_tokens,
+    ask_anthropic_thinking,
     ask_gemini_thinking_config,
     ask_glm_region,
     ask_kr_data_sources,
@@ -780,12 +782,16 @@ def get_user_selections():
     thinking_level = None
     reasoning_effort = None
     anthropic_effort = None
+    anthropic_max_tokens = None
+    anthropic_thinking = None
 
     provider_lower = selected_llm_provider.lower()
     if provider_from_env:
         thinking_level = DEFAULT_CONFIG["google_thinking_level"]
         reasoning_effort = DEFAULT_CONFIG["openai_reasoning_effort"]
         anthropic_effort = DEFAULT_CONFIG["anthropic_effort"]
+        anthropic_max_tokens = DEFAULT_CONFIG["anthropic_max_tokens"]
+        anthropic_thinking = DEFAULT_CONFIG["anthropic_thinking"]
     elif provider_lower == "google":
         thinking_level = thinking_value_or_prompt(
             "TRADINGAGENTS_GOOGLE_THINKING_LEVEL", "google_thinking_level",
@@ -804,6 +810,24 @@ def get_user_selections():
             "Claude effort", "Step 8: Effort Level",
             "Configure Claude effort level", ask_anthropic_effort,
         )
+    elif provider_lower == "vertex_anthropic":
+        # Vertex Claude honors effort + max_tokens + thinking (routed into the
+        # client's model_kwargs). Same env-precedence rule as the other knobs.
+        anthropic_effort = thinking_value_or_prompt(
+            "TRADINGAGENTS_ANTHROPIC_EFFORT", "anthropic_effort",
+            "Claude effort", "Step 8: Effort Level",
+            "Configure Vertex Claude effort level", ask_anthropic_effort,
+        )
+        anthropic_max_tokens = thinking_value_or_prompt(
+            "TRADINGAGENTS_ANTHROPIC_MAX_TOKENS", "anthropic_max_tokens",
+            "Claude max tokens", "Step 8: Max Output Tokens",
+            "Configure Vertex Claude max output tokens", ask_anthropic_max_tokens,
+        )
+        anthropic_thinking = thinking_value_or_prompt(
+            "TRADINGAGENTS_ANTHROPIC_THINKING", "anthropic_thinking",
+            "Claude thinking", "Step 8: Thinking Mode",
+            "Configure Vertex Claude thinking mode", ask_anthropic_thinking,
+        )
 
     return {
         "ticker": selected_ticker,
@@ -818,6 +842,8 @@ def get_user_selections():
         "google_thinking_level": thinking_level,
         "openai_reasoning_effort": reasoning_effort,
         "anthropic_effort": anthropic_effort,
+        "anthropic_max_tokens": anthropic_max_tokens,
+        "anthropic_thinking": anthropic_thinking,
         "output_language": output_language,
         "enable_kr_sources": enable_kr_sources,
         "enable_vertex_multimodel": is_vertex_multimodel,
@@ -1171,6 +1197,8 @@ def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
     config["google_thinking_level"] = selections.get("google_thinking_level")
     config["openai_reasoning_effort"] = selections.get("openai_reasoning_effort")
     config["anthropic_effort"] = selections.get("anthropic_effort")
+    config["anthropic_max_tokens"] = selections.get("anthropic_max_tokens")
+    config["anthropic_thinking"] = selections.get("anthropic_thinking")
     config["output_language"] = selections.get("output_language", "English")
     # --checkpoint/--no-checkpoint overrides only when explicitly given; omitting
     # the flag preserves TRADINGAGENTS_CHECKPOINT_ENABLED / the default (#976).

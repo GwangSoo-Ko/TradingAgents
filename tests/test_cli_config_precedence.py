@@ -67,3 +67,12 @@ def test_checkpoint_flag_overrides_env(flag):
     with mock.patch.object(m, "DEFAULT_CONFIG", patched):
         cfg = m._build_run_config(SELECTIONS, checkpoint=flag)
     assert cfg["checkpoint_enabled"] is flag
+
+
+def test_build_run_config_maps_vertex_anthropic_knobs():
+    """The Vertex-Claude max_tokens/thinking knobs round-trip selections -> config."""
+    sel = dict(SELECTIONS)
+    sel.update(anthropic_max_tokens=20000, anthropic_thinking="adaptive")
+    cfg = m._build_run_config(sel, checkpoint=None)
+    assert cfg["anthropic_max_tokens"] == 20000
+    assert cfg["anthropic_thinking"] == "adaptive"

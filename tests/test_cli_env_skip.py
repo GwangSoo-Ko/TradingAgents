@@ -145,5 +145,29 @@ class TestReasoningEffortSkippedFromEnv(unittest.TestCase):
         self.assertEqual(sel["openai_reasoning_effort"], "high")
 
 
+@pytest.mark.unit
+class TestVertexAnthropicPromptHelpers(unittest.TestCase):
+    def test_ask_anthropic_max_tokens_parses_int(self):
+        import cli.utils as u
+
+        with mock.patch.object(u.questionary, "text") as qtext:
+            qtext.return_value.ask.return_value = "20000"
+            self.assertEqual(u.ask_anthropic_max_tokens(), 20000)
+
+    def test_ask_anthropic_max_tokens_blank_is_none(self):
+        import cli.utils as u
+
+        with mock.patch.object(u.questionary, "text") as qtext:
+            qtext.return_value.ask.return_value = ""
+            self.assertIsNone(u.ask_anthropic_max_tokens())
+
+    def test_ask_anthropic_thinking_returns_choice(self):
+        import cli.utils as u
+
+        with mock.patch.object(u.questionary, "select") as qsel:
+            qsel.return_value.ask.return_value = "adaptive"
+            self.assertEqual(u.ask_anthropic_thinking(), "adaptive")
+
+
 if __name__ == "__main__":
     unittest.main()

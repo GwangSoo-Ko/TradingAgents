@@ -577,6 +577,40 @@ def ask_anthropic_effort() -> str | None:
     ).ask()
 
 
+def ask_anthropic_max_tokens() -> int | None:
+    """Ask for a Vertex Claude max output-token cap (blank = library default).
+
+    Keep it <= ~21000: the per-node LLM calls are non-streaming, and the Anthropic
+    SDK raises "streaming required" for a request it estimates will exceed 10
+    minutes (roughly ``max_tokens > 21333``).
+    """
+    raw = questionary.text(
+        "Max output tokens for Vertex Claude (blank = default; keep <= 21000):",
+        validate=lambda t: (t.strip() == "" or (t.strip().isdigit() and int(t) > 0))
+        or "Enter a positive integer, or leave blank for the default.",
+    ).ask()
+    if raw is None or raw.strip() == "":
+        return None
+    return int(raw)
+
+
+def ask_anthropic_thinking() -> str | None:
+    """Ask for Vertex Claude thinking mode (Off = provider default)."""
+    return questionary.select(
+        "Select Thinking Mode:",
+        choices=[
+            questionary.Choice("Off (default)", None),
+            questionary.Choice("Adaptive (recommended on Claude 4.7/4.8)", "adaptive"),
+            questionary.Choice("Disabled (explicit)", "disabled"),
+        ],
+        style=questionary.Style([
+            ("selected", "fg:cyan noinherit"),
+            ("highlighted", "fg:cyan noinherit"),
+            ("pointer", "fg:cyan noinherit"),
+        ]),
+    ).ask()
+
+
 def ask_gemini_thinking_config() -> str | None:
     """Ask for Gemini thinking configuration.
 
