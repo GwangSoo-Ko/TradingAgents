@@ -161,10 +161,20 @@ class TradingAgentsGraph:
             if reasoning_effort:
                 kwargs["reasoning_effort"] = reasoning_effort
 
-        elif provider == "anthropic":
+        elif provider in ("anthropic", "vertex_anthropic"):
             effort = self.config.get("anthropic_effort")
             if effort:
                 kwargs["effort"] = effort
+            # max_tokens/thinking are wired only for the Vertex Claude client
+            # (VertexAnthropicClient routes them into model_kwargs); the
+            # vendor-direct anthropic path is left untouched.
+            if provider == "vertex_anthropic":
+                max_tokens = self.config.get("anthropic_max_tokens")
+                if max_tokens is not None and max_tokens != "":
+                    kwargs["max_tokens"] = int(max_tokens)
+                thinking = self.config.get("anthropic_thinking")
+                if thinking:
+                    kwargs["thinking"] = thinking
 
         # Sampling temperature is cross-provider: forward it whenever set.
         # float() here so a value coming from a TRADINGAGENTS_TEMPERATURE env
@@ -183,9 +193,9 @@ class TradingAgentsGraph:
 
     def _provider_kwargs_for(self, spec: dict[str, Any]) -> dict[str, Any]:
         """Thinking/sampling kwargs for a role_models spec (per-spec wins, else
-        run-level). Vertex providers get only sampling kwargs in v1 — their
-        thinking-config param names are pending live SDK verification and the
-        Vertex clients forward a minimal kwarg set."""
+        run-level). vertex_anthropic gets effort/max_tokens/thinking (routed into
+        the client's model_kwargs); vertex_gemini/vertex_grok still get only
+        sampling kwargs (their thinking-config param names are unverified)."""
         provider = str(spec.get("provider", "")).lower()
         kwargs: dict[str, Any] = {}
         if provider == "google":
@@ -196,10 +206,19 @@ class TradingAgentsGraph:
             effort = spec.get("openai_reasoning_effort", self.config.get("openai_reasoning_effort"))
             if effort:
                 kwargs["reasoning_effort"] = effort
-        elif provider == "anthropic":
+        elif provider in ("anthropic", "vertex_anthropic"):
             eff = spec.get("anthropic_effort", self.config.get("anthropic_effort"))
             if eff:
                 kwargs["effort"] = eff
+            if provider == "vertex_anthropic":
+                mt = spec.get("anthropic_max_tokens",
+                              self.config.get("anthropic_max_tokens"))
+                if mt is not None and mt != "":
+                    kwargs["max_tokens"] = int(mt)
+                th = spec.get("anthropic_thinking",
+                              self.config.get("anthropic_thinking"))
+                if th:
+                    kwargs["thinking"] = th
         temperature = spec.get("temperature", self.config.get("temperature"))
         if temperature is not None and temperature != "":
             kwargs["temperature"] = float(temperature)

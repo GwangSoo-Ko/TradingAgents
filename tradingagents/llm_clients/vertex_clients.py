@@ -7,9 +7,14 @@ Three providers, two integration patterns:
                        (langchain_openai), Google OAuth token as api_key
 
 All SDK imports are lazy (inside get_llm) so the default install / test suite
-runs without the optional ``[vertex]`` extra. v1 forwards a minimal, SDK-safe
-kwarg set; thinking-config (thinking_level / effort) plumbing for the Vertex SDK
-is deferred until param names are confirmed against a live project.
+runs without the optional ``[vertex]`` extra.
+
+Thinking/effort plumbing: ``vertex_anthropic`` forwards ``max_tokens`` directly
+and routes ``effort`` -> ``output_config.effort`` and ``thinking`` (a "adaptive"/
+"disabled" shorthand or a full dict) through ``ChatAnthropicVertex.model_kwargs``,
+which its ``_default_params`` spreads into ``messages.create(**params)``.
+``vertex_gemini`` / ``vertex_grok`` still forward only sampling kwargs — their
+thinking-config param names remain pending live SDK verification.
 """
 
 from __future__ import annotations
@@ -111,6 +116,23 @@ class VertexAnthropicClient(_VertexClientBase):
         for key in ("temperature", "max_tokens", "max_retries", "callbacks"):
             if key in self.kwargs:
                 llm_kwargs[key] = self.kwargs[key]
+        # thinking/effort are NOT ChatAnthropicVertex fields (it subclasses
+        # _VertexAICommon, not ChatAnthropic), so route them through model_kwargs:
+        # its _default_params spreads **model_kwargs into messages.create(**params).
+        #   - effort  -> output_config.effort  (Claude's depth/token control)
+        #   - thinking -> a bare string is shorthand for {"type": <mode>} (e.g.
+        #     "adaptive"); a dict passes through verbatim.
+        model_kwargs: dict[str, Any] = {}
+        effort = self.kwargs.get("effort")
+        if effort:
+            model_kwargs["output_config"] = {"effort": effort}
+        thinking = self.kwargs.get("thinking")
+        if thinking:
+            model_kwargs["thinking"] = (
+                {"type": thinking} if isinstance(thinking, str) else thinking
+            )
+        if model_kwargs:
+            llm_kwargs["model_kwargs"] = model_kwargs
         return cls(**llm_kwargs)
 
 

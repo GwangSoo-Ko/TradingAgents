@@ -128,3 +128,98 @@ class TestRoleModelsPreset:
         trader = g._llm_for("trader")
         bull = g._llm_for("bull_researcher")
         assert trader is bull  # same vertex_gemini/gemini-3.5-flash/global client
+
+
+@pytest.mark.unit
+class TestVertexAnthropicThinkingKwargs:
+    """anthropic_effort / anthropic_max_tokens / anthropic_thinking must reach the
+    create_llm_client kwargs for vertex_anthropic (both the single-model tier path
+    and the role_models debate path). Opt-in: unset => nothing forwarded."""
+
+    def _single(self, **over):
+        cfg = dict(_BASE)
+        cfg.update(
+            llm_provider="vertex_anthropic",
+            quick_think_llm="claude-opus-4-8",
+            deep_think_llm="claude-opus-4-8",
+            vertex_project="tpmn-dev",
+            vertex_location="global",
+        )
+        cfg.update(over)
+        return cfg
+
+    def test_single_model_forwards_effort_max_tokens_thinking(self, monkeypatch):
+        calls = _patch_factory(monkeypatch)
+        g = _graph(self._single(
+            anthropic_effort="high",
+            anthropic_max_tokens=8192,
+            anthropic_thinking="adaptive",
+        ))
+        g._llm_for("market_analyst")  # role_models unset -> quick tier default
+        call = next(c for c in calls if c["provider"] == "vertex_anthropic")
+        assert call["effort"] == "high"
+        assert call["max_tokens"] == 8192
+        assert call["thinking"] == "adaptive"
+
+    def test_single_model_defaults_forward_nothing(self, monkeypatch):
+        calls = _patch_factory(monkeypatch)
+        g = _graph(self._single())  # all knobs default (None)
+        g._llm_for("market_analyst")
+        call = next(c for c in calls if c["provider"] == "vertex_anthropic")
+        assert "effort" not in call
+        assert "max_tokens" not in call
+        assert "thinking" not in call
+
+    def test_max_tokens_env_string_coerced_to_int(self, monkeypatch):
+        # Env vars arrive as strings; keep the same behavior as temperature.
+        calls = _patch_factory(monkeypatch)
+        g = _graph(self._single(anthropic_max_tokens="16000"))
+        g._llm_for("market_analyst")
+        call = next(c for c in calls if c["provider"] == "vertex_anthropic")
+        assert call["max_tokens"] == 16000
+        assert isinstance(call["max_tokens"], int)
+
+    def test_role_models_spec_forwards_from_config(self, monkeypatch):
+        from cli.presets import VERTEX_DEBATE_PRESET
+        calls = _patch_factory(monkeypatch)
+        cfg = dict(_BASE)
+        cfg.update(
+            llm_provider="vertex_gemini",
+            quick_think_llm="gemini-3.5-flash",
+            deep_think_llm="gemini-3.5-flash",
+            vertex_project="tpmn-dev",
+            vertex_location="global",
+            role_models=dict(VERTEX_DEBATE_PRESET),
+            anthropic_effort="max",
+            anthropic_max_tokens=16000,
+            anthropic_thinking="adaptive",
+        )
+        g = _graph(cfg)
+        g._llm_for("research_manager")  # vertex_anthropic spec in the preset
+        call = next(c for c in calls if c["provider"] == "vertex_anthropic")
+        assert call["effort"] == "max"
+        assert call["max_tokens"] == 16000
+        assert call["thinking"] == "adaptive"
+
+    def test_role_spec_override_wins_over_config(self, monkeypatch):
+        calls = _patch_factory(monkeypatch)
+        cfg = dict(_BASE)
+        cfg.update(
+            llm_provider="vertex_gemini",
+            quick_think_llm="gemini-3.5-flash",
+            deep_think_llm="gemini-3.5-flash",
+            vertex_project="tpmn-dev",
+            vertex_location="global",
+            anthropic_effort="low",  # run-level
+            role_models={
+                "research_manager": {
+                    "provider": "vertex_anthropic",
+                    "model": "claude-opus-4-8",
+                    "anthropic_effort": "max",  # per-spec wins
+                },
+            },
+        )
+        g = _graph(cfg)
+        g._llm_for("research_manager")
+        call = next(c for c in calls if c["provider"] == "vertex_anthropic")
+        assert call["effort"] == "max"

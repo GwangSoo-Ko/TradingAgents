@@ -105,9 +105,15 @@ GCP project + location. Required env: `GOOGLE_CLOUD_PROJECT` (e.g. `tpmn-dev`),
 optional `GOOGLE_CLOUD_LOCATION` (default `global`), and ADC via
 `gcloud auth application-default login` (or `GOOGLE_APPLICATION_CREDENTIALS`). It also
 works non-interactively via `TRADINGAGENTS_LLM_PROVIDER=vertex_model_garden` +
-`GOOGLE_CLOUD_PROJECT`. v1 forwards a minimal kwarg set to the Vertex clients;
-thinking-config plumbing is deferred. Don't remove the vendor-direct providers —
-they stay for single-model runs.
+`GOOGLE_CLOUD_PROJECT`. **`vertex_anthropic` thinking-config is wired**: config knobs
+`anthropic_effort`, `anthropic_max_tokens`, `anthropic_thinking` (env
+`TRADINGAGENTS_ANTHROPIC_{EFFORT,MAX_TOKENS,THINKING}`; also per-role in `role_models`)
+are computed in `_get_provider_kwargs`/`_provider_kwargs_for` and translated by
+`VertexAnthropicClient.get_llm` — `max_tokens` direct, `effort`→`output_config.effort`,
+`thinking` (`"adaptive"`/`"disabled"` shorthand or a dict)→`model_kwargs.thinking`. All
+opt-in (unset ⇒ ChatAnthropicVertex defaults, incl. `max_tokens` 4096). `vertex_gemini`/
+`vertex_grok` thinking-config stays deferred (they forward only sampling kwargs).
+Don't remove the vendor-direct providers — they stay for single-model runs.
 
 For users without an Anthropic/xAI API key, two CLI options run the **whole
 pipeline on a single Vertex-hosted model** (no vendor key, ADC auth): **"Vertex

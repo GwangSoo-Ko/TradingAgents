@@ -26,6 +26,9 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_GOOGLE_THINKING_LEVEL":   "google_thinking_level",
     "TRADINGAGENTS_OPENAI_REASONING_EFFORT": "openai_reasoning_effort",
     "TRADINGAGENTS_ANTHROPIC_EFFORT":        "anthropic_effort",
+    # Vertex Claude (vertex_anthropic) only: output cap + thinking mode.
+    "TRADINGAGENTS_ANTHROPIC_MAX_TOKENS":    "anthropic_max_tokens",
+    "TRADINGAGENTS_ANTHROPIC_THINKING":      "anthropic_thinking",
 }
 
 
@@ -92,6 +95,11 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "google_thinking_level": "high",    # "high", "minimal", etc.
     "openai_reasoning_effort": None,    # "medium", "high", "low"
     "anthropic_effort": None,           # "high", "medium", "low"
+    # Vertex Claude (vertex_anthropic) only — routed into ChatAnthropicVertex
+    # model_kwargs. None => library defaults (max_tokens falls back to 4096,
+    # thinking off). See VertexAnthropicClient.get_llm / _get_provider_kwargs.
+    "anthropic_max_tokens": None,       # int output cap, e.g. 8192
+    "anthropic_thinking": None,         # "adaptive" | "disabled" (shorthand for {"type": ...})
     # Sampling temperature, forwarded to every provider when set. None leaves
     # each provider at its own default. Lower values reduce run-to-run
     # variation on models that honor it; reasoning models largely ignore it

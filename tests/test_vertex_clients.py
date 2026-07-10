@@ -118,6 +118,56 @@ class TestVertexClients:
         assert captured["claude"]["project"] == "tpmn-dev"
         assert captured["claude"]["location"] == "global"
 
+    def test_anthropic_client_omits_model_kwargs_when_unset(self, monkeypatch):
+        # Opt-in: a plain build must not inject any thinking/effort config, so a
+        # default Vertex Claude run is byte-for-byte unchanged.
+        captured = _install_fake_vertexai(monkeypatch)
+        from tradingagents.llm_clients.vertex_clients import VertexAnthropicClient
+        VertexAnthropicClient("claude-opus-4-8", project="p", location="global").get_llm()
+        assert "model_kwargs" not in captured["claude"]
+        assert "effort" not in captured["claude"]
+        assert "thinking" not in captured["claude"]
+
+    def test_anthropic_client_forwards_max_tokens(self, monkeypatch):
+        captured = _install_fake_vertexai(monkeypatch)
+        from tradingagents.llm_clients.vertex_clients import VertexAnthropicClient
+        VertexAnthropicClient(
+            "claude-opus-4-8", project="p", location="global", max_tokens=8192,
+        ).get_llm()
+        assert captured["claude"]["max_tokens"] == 8192
+
+    def test_anthropic_client_maps_effort_into_output_config(self, monkeypatch):
+        # effort is not a ChatAnthropicVertex field; it must ride in model_kwargs
+        # as output_config.effort so it reaches messages.create(**params).
+        captured = _install_fake_vertexai(monkeypatch)
+        from tradingagents.llm_clients.vertex_clients import VertexAnthropicClient
+        VertexAnthropicClient(
+            "claude-opus-4-8", project="p", location="global", effort="high",
+        ).get_llm()
+        assert captured["claude"]["model_kwargs"]["output_config"] == {"effort": "high"}
+        assert "effort" not in captured["claude"]
+
+    def test_anthropic_client_wraps_thinking_string_into_dict(self, monkeypatch):
+        captured = _install_fake_vertexai(monkeypatch)
+        from tradingagents.llm_clients.vertex_clients import VertexAnthropicClient
+        VertexAnthropicClient(
+            "claude-opus-4-8", project="p", location="global", thinking="adaptive",
+        ).get_llm()
+        assert captured["claude"]["model_kwargs"]["thinking"] == {"type": "adaptive"}
+        assert "thinking" not in captured["claude"]
+
+    def test_anthropic_client_passes_thinking_dict_through(self, monkeypatch):
+        # A programmatic caller may pass the full dict; keep it verbatim.
+        captured = _install_fake_vertexai(monkeypatch)
+        from tradingagents.llm_clients.vertex_clients import VertexAnthropicClient
+        VertexAnthropicClient(
+            "claude-opus-4-8", project="p", location="global",
+            thinking={"type": "enabled", "budget_tokens": 4096},
+        ).get_llm()
+        assert captured["claude"]["model_kwargs"]["thinking"] == {
+            "type": "enabled", "budget_tokens": 4096
+        }
+
     def test_grok_client_builds_openai_compat_with_token(self, monkeypatch):
         from tradingagents.llm_clients import vertex_auth
         monkeypatch.setattr(
@@ -143,6 +193,35 @@ class TestVertexClients:
         assert VertexGeminiClient("anything").validate_model() is True
         assert VertexAnthropicClient("anything").validate_model() is True
         assert VertexGrokClient("anything").validate_model() is True
+
+    def test_end_to_end_config_knobs_reach_chatanthropicvertex(self, monkeypatch):
+        """Full chain: config knobs -> _llm_for -> real VertexAnthropicClient ->
+        ChatAnthropicVertex constructor. create_llm_client is NOT mocked here, so a
+        key-name mismatch between the graph builder and the client would surface."""
+        captured = _install_fake_vertexai(monkeypatch)
+        from tradingagents.graph.trading_graph import TradingAgentsGraph
+        g = TradingAgentsGraph.__new__(TradingAgentsGraph)
+        g.callbacks = []
+        g._llm_cache = {}
+        g.config = {
+            "llm_provider": "vertex_anthropic",
+            "quick_think_llm": "claude-opus-4-8",
+            "deep_think_llm": "claude-opus-4-8",
+            "vertex_project": "tpmn-dev",
+            "vertex_location": "global",
+            "backend_url": None,
+            "temperature": None,
+            "role_models": None,
+            "anthropic_effort": "high",
+            "anthropic_max_tokens": 8192,
+            "anthropic_thinking": "adaptive",
+        }
+        g._llm_for("research_manager")  # deep tier -> vertex_anthropic
+        claude = captured["claude"]
+        assert claude["model_name"] == "claude-opus-4-8"
+        assert claude["max_tokens"] == 8192
+        assert claude["model_kwargs"]["output_config"] == {"effort": "high"}
+        assert claude["model_kwargs"]["thinking"] == {"type": "adaptive"}
 
     def test_factory_dispatches_vertex_providers(self, monkeypatch):
         _install_fake_vertexai(monkeypatch)

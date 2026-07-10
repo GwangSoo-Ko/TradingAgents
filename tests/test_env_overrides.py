@@ -94,6 +94,25 @@ def test_reasoning_effort_defaults_to_none(monkeypatch):
     assert dc.DEFAULT_CONFIG["anthropic_effort"] is None
 
 
+def test_vertex_anthropic_thinking_knobs_default_to_none(monkeypatch):
+    """The Vertex-Claude max_tokens/thinking knobs are unset by default (opt-in)."""
+    dc = _reload_with_env(monkeypatch)
+    assert dc.DEFAULT_CONFIG["anthropic_max_tokens"] is None
+    assert dc.DEFAULT_CONFIG["anthropic_thinking"] is None
+
+
+def test_vertex_anthropic_thinking_knobs_env_overrides(monkeypatch):
+    """Env vars overlay the new knobs. max_tokens stays a string here — the graph
+    kwargs builder int-coerces it later, mirroring how temperature is handled."""
+    dc = _reload_with_env(
+        monkeypatch,
+        TRADINGAGENTS_ANTHROPIC_MAX_TOKENS="8192",
+        TRADINGAGENTS_ANTHROPIC_THINKING="adaptive",
+    )
+    assert dc.DEFAULT_CONFIG["anthropic_max_tokens"] == "8192"
+    assert dc.DEFAULT_CONFIG["anthropic_thinking"] == "adaptive"
+
+
 def test_empty_env_value_is_passthrough(monkeypatch):
     """Empty TRADINGAGENTS_* values must not clobber the built-in default."""
     dc = _reload_with_env(
