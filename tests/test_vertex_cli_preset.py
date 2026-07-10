@@ -105,6 +105,33 @@ class TestVertexSingleModel:
         assert cfg["vertex_project"] == "tpmn-dev"
         assert cfg["vertex_location"] == "global"
 
+
+@pytest.mark.unit
+class TestVertexPreflight:
+    """ensure_vertex_extra fails fast when a vertex_* provider is picked but the
+    optional [vertex] extra is not installed — before the project/model prompts."""
+
+    def test_noop_for_non_vertex_provider(self):
+        import cli.main as m
+        assert m.ensure_vertex_extra("openai") is None
+
+    def test_exits_when_extra_missing(self, monkeypatch):
+        import importlib.util
+
+        import typer
+
+        import cli.main as m
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+        with pytest.raises(typer.Exit):
+            m.ensure_vertex_extra("vertex_anthropic")
+
+    def test_passes_when_extra_present(self, monkeypatch):
+        import importlib.util
+
+        import cli.main as m
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
+        assert m.ensure_vertex_extra("vertex_grok") is None
+
     def test_apply_grok_single(self):
         from cli.presets import apply_vertex_single_model_config
         cfg = {}

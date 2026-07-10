@@ -488,6 +488,25 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     layout["footer"].update(Panel(stats_table, border_style="grey50"))
 
 
+def ensure_vertex_extra(provider: str) -> None:
+    """Fail fast when a vertex_* provider is selected but the optional [vertex]
+    extra is absent.
+
+    The vertex clients import their SDK lazily at graph-build time, so without
+    this pre-flight the user fills out every prompt (project, model, thinking)
+    before hitting the ImportError. Checked right after provider selection.
+    """
+    if not str(provider).lower().startswith("vertex_"):
+        return
+    import importlib.util
+    if importlib.util.find_spec("langchain_google_vertexai") is None:
+        console.print(
+            "[red]Vertex providers require the optional [vertex] extra.[/red]\n"
+            '  Install it and re-run:  [bold]pip install -e ".[vertex]"[/bold]'
+        )
+        raise typer.Exit(1)
+
+
 def get_user_selections():
     """Get all user selections before starting the analysis display."""
     # Display ASCII art welcome message
@@ -639,6 +658,8 @@ def get_user_selections():
         console.print(f"[green]✓ Backend URL:[/green] {backend_url}")
         # Still confirm/persist the API key so the run doesn't fail later.
         ensure_api_key(selected_llm_provider)
+        # Fail fast if a vertex provider was chosen without the [vertex] extra.
+        ensure_vertex_extra(selected_llm_provider)
 
         # vertex_model_garden is a CLI meta-provider (not a real client key): when
         # set via TRADINGAGENTS_LLM_PROVIDER, enable multi-model mode here and read
@@ -706,6 +727,10 @@ def get_user_selections():
         # before model selection so it's obvious where we're connecting.
         if selected_llm_provider == "ollama":
             confirm_ollama_endpoint(backend_url)
+
+        # Fail fast if a vertex provider was chosen without the [vertex] extra,
+        # before the project / model / thinking prompts.
+        ensure_vertex_extra(selected_llm_provider)
 
         is_vertex_multimodel = selected_llm_provider == "vertex_model_garden"
         if is_vertex_multimodel:
