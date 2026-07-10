@@ -52,6 +52,65 @@ see §4.
 
 ---
 
+## 1b. Running `main.py` and consuming its output
+
+`main.py` is a **runnable, arg-driven entry**: `python main.py TICKER [DATE]` —
+`TICKER` is required (argparse errors if missing), `DATE` is optional
+(`YYYY-MM-DD`, validated) and **defaults to today**. It runs a full analysis,
+prints the decision, then writes the report tree and prints its path:
+
+```
+$ python main.py MU 2026-01-15
+Buy
+Report saved: /Users/you/.tradingagents/logs/reports/MU_20260115_140233/complete_report.md
+```
+
+> ⚠️ `main.py` carries a **hard-coded run config** (`build_config()` — currently a
+> tiered Vertex Claude setup: Sonnet 5 quick / Opus 4.8 deep judges, Korean
+> output, all four analysts). Shelling out to `main.py` uses *that* config; to
+> vary provider/models/language per run, either edit `build_config()` or use the
+> import path (mode B) below. `main.py` imports `cli.main` (for the rich report
+> writer), so it needs the `cli/` package present.
+
+### The report tree (what to parse)
+
+Written under **`{results_dir}/reports/{safe_ticker}_{YYYYMMDD_HHMMSS}/`**
+(`results_dir` defaults to `~/.tradingagents/logs`; override with
+`TRADINGAGENTS_RESULTS_DIR`, or relocate the whole home with
+`TRADINGAGENTS_CACHE_DIR`):
+
+```
+complete_report.md          # consolidated report; header has company label + a
+                            # per-role provider/model table (the run's provenance)
+1_analysts/{market,sentiment,news,fundamentals}.md
+2_research/{bull,bear,manager}.md
+3_trading/trader.md
+4_risk/{aggressive,conservative,neutral}.md
+5_portfolio/decision.md     # the Portfolio Manager's final decision (rendered)
+```
+
+The **final decision** is available three ways: stdout (the line before
+`Report saved:`), `5_portfolio/decision.md`, and `final_state["final_trade_decision"]`.
+The heuristic **Buy/Hold/Sell** signal is the second return of `propagate()` /
+`process_signal()`.
+
+### Two consumption modes for a host app (e.g. alpha-pulse)
+
+- **(A) Shell out + read reports** — matches "run `main.py`, use the reports".
+  `subprocess.run([sys.executable, "main.py", ticker], capture_output=True)`, then
+  read the path from the `Report saved:` line of stdout (don't glob by timestamp —
+  parse the printed path) and consume `complete_report.md` / the per-section files.
+  Simplest, but locked to `main.py`'s baked config and pays subprocess + a fresh
+  graph build per run.
+- **(B) Import + drive directly** — tighter and configurable. Build your own
+  `config`, call `final_state, signal = ta.propagate(ticker, date)`, consume the
+  structured `final_state` dict (all `*_report` keys + `final_trade_decision`)
+  and/or call `ta.save_reports(final_state, ticker)` for the file tree. Preferred
+  when alpha-pulse needs per-run config, structured access, or to avoid a
+  subprocess. See §1.
+
+---
+
 ## 2. Package layout & what to copy
 
 Copy the **`tradingagents/`** package. Copy **`cli/`** only if you want the
@@ -184,7 +243,10 @@ processes.
 `propagate` path — verify against your routed features before dropping):
 `backtrader`, `redis`, `parsel`, `langchain-experimental`, `setuptools`. The
 `beautifulsoup4` used by KR `wisereport.py` arrives transitively — declare it if
-you keep KR vendors.
+you keep KR vendors. **`certifi`** (transitive via `requests`) is required by the
+stdlib-`urllib` vendors — `dataflows/net.py:default_ssl_context` builds their TLS
+context from certifi's CA bundle so reddit/stocktwits work on macOS installs
+whose OS CA bundle isn't linked; keep certifi if you vendor those vendors.
 
 **Per-provider LangChain packages** are only needed for the provider you actually
 build: keep `langchain-openai` (imported at module top of `openai_client.py`);
