@@ -132,6 +132,44 @@ class TestVertexPreflight:
         monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
         assert m.ensure_vertex_extra("vertex_grok") is None
 
+
+class _FakeText:
+    def __init__(self, value):
+        self._value = value
+
+    def ask(self):
+        return self._value
+
+
+@pytest.mark.unit
+class TestVertexConfigDefaults:
+    """The GCP project prompt defaults to tpmn-dev when GOOGLE_CLOUD_PROJECT is
+    unset, but the env var still wins when present."""
+
+    def _project_default(self, monkeypatch, env):
+        import cli.utils as u
+        for k in ("GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION"):
+            monkeypatch.delenv(k, raising=False)
+        for k, v in env.items():
+            monkeypatch.setenv(k, v)
+        defaults = []
+
+        def fake_text(msg, default=None, validate=None):
+            defaults.append(default)
+            return _FakeText("x")  # non-empty so the None-guards pass
+
+        monkeypatch.setattr(u.questionary, "text", fake_text)
+        u.ask_vertex_config()
+        return defaults[0]  # the project prompt's default
+
+    def test_project_defaults_to_tpmn_dev_without_env(self, monkeypatch):
+        assert self._project_default(monkeypatch, {}) == "tpmn-dev"
+
+    def test_project_honors_env_when_set(self, monkeypatch):
+        assert self._project_default(
+            monkeypatch, {"GOOGLE_CLOUD_PROJECT": "other-proj"}
+        ) == "other-proj"
+
     def test_apply_grok_single(self):
         from cli.presets import apply_vertex_single_model_config
         cfg = {}
