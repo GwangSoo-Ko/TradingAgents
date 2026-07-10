@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Breaking changes within the 0.x line are called out explicitly.
 
+## [Unreleased]
+
+Fork additions (not yet in an upstream release).
+
+### Added
+
+- **Vertex Claude thinking/effort/max_tokens are now wired.** `vertex_anthropic`
+  previously ran at `ChatAnthropicVertex` defaults (max_tokens 4096, no thinking).
+  New opt-in config knobs `anthropic_effort`, `anthropic_max_tokens`,
+  `anthropic_thinking` (env `TRADINGAGENTS_ANTHROPIC_{EFFORT,MAX_TOKENS,THINKING}`;
+  also per-role in `role_models`) are computed in
+  `_get_provider_kwargs`/`_provider_kwargs_for` and translated by
+  `VertexAnthropicClient.get_llm` — `max_tokens` direct, `effort` →
+  `output_config.effort`, `thinking` (`"adaptive"`/`"disabled"` shorthand or a
+  dict) → `model_kwargs.thinking`. Unset ⇒ unchanged defaults. The interactive
+  CLI (Step 8) prompts for all three on the Vertex Claude single-model option.
+  Live-verified on Vertex Model Garden (opus-4-8/max, sonnet-5/high). Keep
+  `max_tokens` ≤ ~21000 so the non-streaming node calls stay under the Anthropic
+  SDK's "streaming required" guard. `docs/smoke`: `scripts/smoke_vertex_thinking.py`.
+- **Embedding guide** (`docs/INTEGRATION.md`) for projects internalizing/vendoring
+  the package: public surface, module boundaries, config-key reference, runtime
+  footprint, and dependency footprint.
+
 ## [0.3.1] — 2026-07-05
 
 Correctness and stability patch: data look-ahead, graph-router crash-safety,
