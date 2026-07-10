@@ -68,7 +68,7 @@ class TestStockTwitsCryptoSymbols:
     def test_crypto_pair_requests_dot_x_endpoint(self):
         seen = {}
 
-        def fake_urlopen(req, timeout=None):
+        def fake_urlopen(req, timeout=None, context=None):
             seen["url"] = req.full_url
             raise TimeoutError("stop after capturing the URL")
 

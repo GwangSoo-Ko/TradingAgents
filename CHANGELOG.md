@@ -29,6 +29,15 @@ Fork additions (not yet in an upstream release).
   the package: public surface, module boundaries, config-key reference, runtime
   footprint, and dependency footprint.
 
+### Fixed
+
+- **Reddit / StockTwits TLS on macOS.** The stdlib-`urllib` vendors verified
+  against the OS CA bundle, which macOS Python.framework installs ship without —
+  every fetch failed with `CERTIFICATE_VERIFY_FAILED`. They now build their SSL
+  context from certifi's bundle (`dataflows/net.py:default_ssl_context`, already a
+  transitive dependency); verification is never disabled. `requests`-based vendors
+  were unaffected.
+
 ## [0.3.1] — 2026-07-05
 
 Correctness and stability patch: data look-ahead, graph-router crash-safety,

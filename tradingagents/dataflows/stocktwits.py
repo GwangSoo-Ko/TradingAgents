@@ -19,6 +19,7 @@ import json
 import logging
 from urllib.request import Request, urlopen
 
+from .net import default_ssl_context
 from .symbol_utils import crypto_base
 
 logger = logging.getLogger(__name__)
@@ -69,7 +70,7 @@ def fetch_stocktwits_messages(ticker: str, limit: int = 30, timeout: float = 10.
     url = _API.format(ticker=_stocktwits_symbol(ticker))
     req = Request(url, headers={"User-Agent": _UA, "Accept": "application/json"})
     try:
-        with urlopen(req, timeout=timeout) as resp:
+        with urlopen(req, timeout=timeout, context=default_ssl_context()) as resp:
             data = json.loads(resp.read())
     except (OSError, http.client.HTTPException, json.JSONDecodeError, ValueError) as exc:
         # OSError covers URLError/TimeoutError/connection resets; HTTPException
