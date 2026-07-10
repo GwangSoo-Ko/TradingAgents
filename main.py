@@ -1,54 +1,88 @@
+"""Programmatic entry point.
+
+Usage:
+    python main.py TICKER [DATE]
+
+TICKER is required (e.g. NVDA, MU, 005930.KS). DATE is optional (YYYY-MM-DD) and
+defaults to today. The run config below is a tiered Vertex Model Garden run on
+Claude — edit or comment out ``build_config`` to fall back to DEFAULT_CONFIG.
+"""
+
+import argparse
+import datetime
+
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 
-# DEFAULT_CONFIG already applies TRADINGAGENTS_* env-var overrides
-# (llm_provider, deep_think_llm, quick_think_llm, backend_url, etc.),
-# so users can switch models or endpoints purely via .env without
-# editing this script. Override individual keys here only when you
-# want a hard-coded value that should ignore the environment.
-config = DEFAULT_CONFIG.copy()
 
-# Tiered Vertex Model Garden run on Claude (no vendor API key — ADC auth + the
-# optional [vertex] extra; needs GOOGLE_CLOUD_PROJECT and `gcloud auth
-# application-default login`). The two deep judges (Research/Portfolio Manager)
-# run Opus 4.8 at max effort; every other role runs Sonnet 5 at high effort.
-# thinking/max_tokens are shared across tiers. vertex_project/location resolve
-# from GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION (default "global").
-# max_tokens stays <= ~21.3k so the non-streaming node calls don't trip the
-# Anthropic SDK's "streaming required" guard. Comment this block out to fall
-# back to DEFAULT_CONFIG (OpenAI + .env).
-config.update({
-    "llm_provider": "vertex_anthropic",
-    "deep_think_llm": "claude-opus-4-8",
-    "quick_think_llm": "claude-sonnet-5",
-    "anthropic_thinking": "adaptive",
-    "anthropic_max_tokens": 20000,
-    "anthropic_effort": "high",          # quick tier (Sonnet 5) default
-    "output_language": "Korean",         # localize the user-facing report/decision
+def _iso_date(value: str) -> str:
+    """argparse type: accept only YYYY-MM-DD so a bad date fails fast."""
+    try:
+        return datetime.date.fromisoformat(value).isoformat()
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"date must be YYYY-MM-DD, got {value!r}") from exc
 
-    "role_models": {                     # override the two deep judges -> Opus / max
-        "research_manager": {
-            "provider": "vertex_anthropic", "model": "claude-opus-4-8",
-            "anthropic_effort": "max",
+
+def parse_args(argv=None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run a TradingAgents analysis.")
+    parser.add_argument("ticker", help="Ticker to analyze (required), e.g. NVDA, MU, 005930.KS")
+    parser.add_argument(
+        "date",
+        nargs="?",
+        type=_iso_date,
+        default=datetime.date.today().isoformat(),
+        help="Analysis date YYYY-MM-DD (default: today)",
+    )
+    return parser.parse_args(argv)
+
+
+def build_config() -> dict:
+    """DEFAULT_CONFIG plus a tiered Vertex Claude run.
+
+    No vendor API key — ADC auth + the optional [vertex] extra; needs
+    GOOGLE_CLOUD_PROJECT and ``gcloud auth application-default login``. The two
+    deep judges (Research/Portfolio Manager) run Opus 4.8 at max effort; every
+    other role runs Sonnet 5 at high effort. thinking/max_tokens are shared;
+    vertex_project/location resolve from GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION
+    (default "global"). max_tokens stays <= ~21.3k so the non-streaming node calls
+    don't trip the Anthropic SDK's "streaming required" guard. Comment the update
+    out to fall back to DEFAULT_CONFIG (OpenAI + .env).
+    """
+    config = DEFAULT_CONFIG.copy()
+    config.update({
+        "llm_provider": "vertex_anthropic",
+        "deep_think_llm": "claude-opus-4-8",
+        "quick_think_llm": "claude-sonnet-5",
+        "anthropic_thinking": "adaptive",
+        "anthropic_max_tokens": 20000,
+        "anthropic_effort": "high",          # quick tier (Sonnet 5) default
+        "output_language": "Korean",         # localize the user-facing report/decision
+        "role_models": {                     # override the two deep judges -> Opus / max
+            "research_manager": {
+                "provider": "vertex_anthropic", "model": "claude-opus-4-8",
+                "anthropic_effort": "max",
+            },
+            "portfolio_manager": {
+                "provider": "vertex_anthropic", "model": "claude-opus-4-8",
+                "anthropic_effort": "max",
+            },
         },
-        "portfolio_manager": {
-            "provider": "vertex_anthropic", "model": "claude-opus-4-8",
-            "anthropic_effort": "max",
-        },
-    },
-})
+    })
+    return config
 
-# Initialize with custom config. selected_analysts defaults to all four; listed
-# explicitly here so it's obvious what runs and easy to trim.
-ta = TradingAgentsGraph(
-    selected_analysts=("market", "social", "news", "fundamentals"),
-    debug=True,
-    config=config,
-)
 
-# forward propagate
-_, decision = ta.propagate("NVDA", "2024-05-10")
-print(decision)
+def main(argv=None) -> None:
+    args = parse_args(argv)
+    # selected_analysts defaults to all four; listed explicitly so the run scope
+    # is obvious and easy to trim.
+    ta = TradingAgentsGraph(
+        selected_analysts=("market", "social", "news", "fundamentals"),
+        debug=True,
+        config=build_config(),
+    )
+    _, decision = ta.propagate(args.ticker, args.date)
+    print(decision)
 
-# Memorize mistakes and reflect
-# ta.reflect_and_remember(1000) # parameter is the position returns
+
+if __name__ == "__main__":
+    main()
