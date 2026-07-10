@@ -80,8 +80,12 @@ def main(argv=None) -> None:
         debug=True,
         config=build_config(),
     )
-    _, decision = ta.propagate(args.ticker, args.date)
+    final_state, decision = ta.propagate(args.ticker, args.date)
     print(decision)
+    # Write the same markdown report tree the CLI produces (per-section files +
+    # a consolidated complete_report.md) under results_dir/reports/<ticker>_<ts>/.
+    report_path = ta.save_reports(final_state, args.ticker)
+    print(f"Report saved: {report_path}")
 
 
 if __name__ == "__main__":
