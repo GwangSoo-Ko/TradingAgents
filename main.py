@@ -8,6 +8,34 @@ from tradingagents.graph.trading_graph import TradingAgentsGraph
 # want a hard-coded value that should ignore the environment.
 config = DEFAULT_CONFIG.copy()
 
+# Tiered Vertex Model Garden run on Claude (no vendor API key — ADC auth + the
+# optional [vertex] extra; needs GOOGLE_CLOUD_PROJECT and `gcloud auth
+# application-default login`). The two deep judges (Research/Portfolio Manager)
+# run Opus 4.8 at max effort; every other role runs Sonnet 5 at high effort.
+# thinking/max_tokens are shared across tiers. vertex_project/location resolve
+# from GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION (default "global").
+# max_tokens stays <= ~21.3k so the non-streaming node calls don't trip the
+# Anthropic SDK's "streaming required" guard. Comment this block out to fall
+# back to DEFAULT_CONFIG (OpenAI + .env).
+config.update({
+    "llm_provider": "vertex_anthropic",
+    "deep_think_llm": "claude-opus-4-8",
+    "quick_think_llm": "claude-sonnet-5",
+    "anthropic_thinking": "adaptive",
+    "anthropic_max_tokens": 20000,
+    "anthropic_effort": "high",          # quick tier (Sonnet 5) default
+    "role_models": {                     # override the two deep judges -> Opus / max
+        "research_manager": {
+            "provider": "vertex_anthropic", "model": "claude-opus-4-8",
+            "anthropic_effort": "max",
+        },
+        "portfolio_manager": {
+            "provider": "vertex_anthropic", "model": "claude-opus-4-8",
+            "anthropic_effort": "max",
+        },
+    },
+})
+
 # Initialize with custom config
 ta = TradingAgentsGraph(debug=True, config=config)
 
