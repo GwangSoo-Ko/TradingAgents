@@ -24,6 +24,8 @@ config.update({
     "anthropic_thinking": "adaptive",
     "anthropic_max_tokens": 20000,
     "anthropic_effort": "high",          # quick tier (Sonnet 5) default
+    "output_language": "Korean",         # localize the user-facing report/decision
+
     "role_models": {                     # override the two deep judges -> Opus / max
         "research_manager": {
             "provider": "vertex_anthropic", "model": "claude-opus-4-8",
@@ -36,8 +38,13 @@ config.update({
     },
 })
 
-# Initialize with custom config
-ta = TradingAgentsGraph(debug=True, config=config)
+# Initialize with custom config. selected_analysts defaults to all four; listed
+# explicitly here so it's obvious what runs and easy to trim.
+ta = TradingAgentsGraph(
+    selected_analysts=("market", "social", "news", "fundamentals"),
+    debug=True,
+    config=config,
+)
 
 # forward propagate
 _, decision = ta.propagate("NVDA", "2024-05-10")
