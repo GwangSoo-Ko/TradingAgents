@@ -241,6 +241,16 @@ print(decision)
 
 See `tradingagents/default_config.py` for all configuration options.
 
+### Embedding in another project (vendoring)
+
+Pulling the source **in-tree** into another codebase instead of `pip install`-ing
+it? See **[`docs/INTEGRATION.md`](docs/INTEGRATION.md)** — the internalization
+guide. It maps the public entry point, which modules to copy (and their
+dependency direction), the full config-key reference, the runtime footprint that
+trips embedders (provider API-key env vars, the `~/.tradingagents/` home tree,
+outbound calls, the process-global `dataflows.config`), the pip dependency
+footprint (with trim-for-embed candidates), and a step-by-step checklist.
+
 ## Persistence and Recovery
 
 TradingAgents persists two kinds of state across runs.

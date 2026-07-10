@@ -44,6 +44,8 @@ docker compose --profile ollama run --rm tradingagents-ollama  # local models
 
 This is a LangGraph-orchestrated multi-agent pipeline. The single entry point is `TradingAgentsGraph.propagate(ticker, date)` in `tradingagents/graph/trading_graph.py`, which returns `(final_state, processed_signal)`.
 
+**Embedding this package in another project (vendoring):** see `docs/INTEGRATION.md` — the external-consumer integration guide (public surface, module boundaries + dependency direction, full config-key reference, runtime footprint, dependency footprint, internalization checklist). Keep it in sync when the public API (`propagate` signature, config keys, entry points) changes.
+
 ### Pipeline (`tradingagents/graph/setup.py`)
 
 Selectable analysts run sequentially, each looping with its `ToolNode` and a message-clear node before passing to the next:
