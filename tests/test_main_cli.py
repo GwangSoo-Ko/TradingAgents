@@ -35,7 +35,11 @@ class TestMainArgs:
 
 @pytest.mark.unit
 class TestMainWritesReports:
-    def test_main_propagates_then_saves_report_tree(self, monkeypatch, tmp_path):
+    def test_main_writes_rich_report_via_cli_writer(self, monkeypatch, tmp_path):
+        # main() writes the CLI's rich-header report tree (company label + a
+        # per-role model table), so it calls cli.main.save_report_to_disk WITH
+        # the run config (the config is what renders the model table).
+        import cli.main as cli_main
         calls = {}
 
         class FakeGraph:
@@ -43,17 +47,17 @@ class TestMainWritesReports:
                 pass
 
             def propagate(self, ticker, date):
-                calls["propagate"] = (ticker, date)
                 return {"final_trade_decision": "Buy"}, "Buy"
 
-            def save_reports(self, final_state, ticker):
-                calls["save_reports"] = (final_state, ticker)
-                return tmp_path / "reports" / "MU_x" / "complete_report.md"
+        def fake_save(final_state, ticker, save_path, config):
+            calls["args"] = (final_state, ticker, save_path, config)
+            return tmp_path / "complete_report.md"
 
         monkeypatch.setattr(m, "TradingAgentsGraph", FakeGraph)
+        monkeypatch.setattr(cli_main, "save_report_to_disk", fake_save)
         m.main(["MU", "2026-01-15"])
 
-        assert calls["propagate"] == ("MU", "2026-01-15")
-        # save_reports gets the graph's final_state and the ticker.
-        assert calls["save_reports"][1] == "MU"
-        assert calls["save_reports"][0] == {"final_trade_decision": "Buy"}
+        fs, ticker, save_path, config = calls["args"]
+        assert ticker == "MU"
+        assert fs == {"final_trade_decision": "Buy"}
+        assert config["llm_provider"] == "vertex_anthropic"  # renders the model table

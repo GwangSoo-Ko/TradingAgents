@@ -10,6 +10,7 @@ Claude — edit or comment out ``build_config`` to fall back to DEFAULT_CONFIG.
 
 import argparse
 import datetime
+from pathlib import Path
 
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
@@ -73,18 +74,25 @@ def build_config() -> dict:
 
 def main(argv=None) -> None:
     args = parse_args(argv)
+    config = build_config()
     # selected_analysts defaults to all four; listed explicitly so the run scope
     # is obvious and easy to trim.
     ta = TradingAgentsGraph(
         selected_analysts=("market", "social", "news", "fundamentals"),
         debug=True,
-        config=build_config(),
+        config=config,
     )
     final_state, decision = ta.propagate(args.ticker, args.date)
     print(decision)
-    # Write the same markdown report tree the CLI produces (per-section files +
-    # a consolidated complete_report.md) under results_dir/reports/<ticker>_<ts>/.
-    report_path = ta.save_reports(final_state, args.ticker)
+    # Write the CLI's rich-header report tree: per-section 1_analysts..5_portfolio
+    # markdown plus a consolidated complete_report.md whose header carries the
+    # resolved company label and a per-role model table. Reuse the CLI writer so
+    # the on-disk output matches `tradingagents` exactly (needs the `config`).
+    from cli.main import save_report_to_disk
+    from tradingagents.dataflows.utils import safe_ticker_component
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    save_path = Path(config["results_dir"]) / "reports" / f"{safe_ticker_component(args.ticker)}_{stamp}"
+    report_path = save_report_to_disk(final_state, args.ticker, save_path, config)
     print(f"Report saved: {report_path}")
 
 
