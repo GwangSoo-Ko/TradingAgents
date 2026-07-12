@@ -58,6 +58,18 @@ def build_config() -> dict:
         "anthropic_max_tokens": 20000,
         "anthropic_effort": "high",          # quick tier (Sonnet 5) default
         "output_language": "Korean",         # localize the user-facing report/decision
+        # KR-only vendors, opt-in by design (default_config keeps them off).
+        # Both raise for non-KR tickers so the chain falls through to yfinance
+        # unchanged — US runs are unaffected. wisereport's audited-actuals half
+        # needs DART_API_KEY and degrades to yfinance without it.
+        "data_vendors": {
+            **DEFAULT_CONFIG["data_vendors"],
+            "news_data": "naver,yfinance",
+            "fundamental_data": "wisereport,yfinance",
+        },
+        # Naver 종목토론방 retail sentiment (KR tickers only; one HTTP GET,
+        # degrades to a placeholder on failure — never blocks the node).
+        "enable_kr_discussion_sentiment": True,
         "role_models": {                     # override the two deep judges -> Opus / max
             "research_manager": {
                 "provider": "vertex_anthropic", "model": "claude-opus-4-8",
