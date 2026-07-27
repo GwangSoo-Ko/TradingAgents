@@ -24,7 +24,7 @@ class TestPresetShape:
         from cli.presets import VERTEX_DEBATE_PRESET
         for judge in ("research_manager", "portfolio_manager"):
             assert VERTEX_DEBATE_PRESET[judge] == {
-                "provider": "vertex_anthropic", "model": "claude-opus-4-8"
+                "provider": "vertex_anthropic", "model": "claude-opus-5"
             }
 
     def test_debaters_span_three_families(self):
@@ -81,7 +81,7 @@ class TestVertexSingleModel:
 
     def test_registry_models(self):
         from cli.presets import VERTEX_SINGLE_MODELS
-        assert VERTEX_SINGLE_MODELS["vertex_anthropic"] == "claude-opus-4-8"
+        assert VERTEX_SINGLE_MODELS["vertex_anthropic"] == "claude-opus-5"
         assert VERTEX_SINGLE_MODELS["vertex_grok"] == "xai/grok-4.3"
 
     def test_apply_noop_when_not_selected(self):
@@ -99,8 +99,8 @@ class TestVertexSingleModel:
             "vertex_project": "tpmn-dev", "vertex_location": None,
         })
         assert cfg["llm_provider"] == "vertex_anthropic"
-        assert cfg["quick_think_llm"] == "claude-opus-4-8"
-        assert cfg["deep_think_llm"] == "claude-opus-4-8"
+        assert cfg["quick_think_llm"] == "claude-opus-5"
+        assert cfg["deep_think_llm"] == "claude-opus-5"
         assert cfg["role_models"] is None
         assert cfg["vertex_project"] == "tpmn-dev"
         assert cfg["vertex_location"] == "global"

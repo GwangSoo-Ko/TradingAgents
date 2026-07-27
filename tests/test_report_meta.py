@@ -53,7 +53,7 @@ class TestAnalysisConfigBlock:
         }
         block = analysis_config_block(cfg)
         assert "vertex-multimodel" in block
-        assert "research_manager" in block and "claude-opus-4-8" in block
+        assert "research_manager" in block and "claude-opus-5" in block
         # trader is NOT in the preset -> shown as a tier default (Gemini)
         assert "trader" in block and "tier default" in block
         # all 12 roles appear

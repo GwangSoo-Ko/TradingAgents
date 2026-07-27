@@ -100,7 +100,7 @@ class TestRoleModelsPreset:
         by_role = {(c["provider"], c["model"]) for c in calls}
         assert ("vertex_gemini", "gemini-3.5-flash") in by_role
         assert ("vertex_grok", "xai/grok-4.3") in by_role
-        assert ("vertex_anthropic", "claude-opus-4-8") in by_role
+        assert ("vertex_anthropic", "claude-opus-5") in by_role
 
     def test_vertex_specs_get_project_and_location(self, monkeypatch):
         calls = _patch_factory(monkeypatch)

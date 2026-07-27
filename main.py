@@ -52,7 +52,7 @@ def build_config() -> dict:
     config = DEFAULT_CONFIG.copy()
     config.update({
         "llm_provider": "vertex_anthropic",
-        "deep_think_llm": "claude-opus-4-8",
+        "deep_think_llm": "claude-opus-5",
         "quick_think_llm": "claude-sonnet-5",
         "anthropic_thinking": "adaptive",
         "anthropic_max_tokens": 20000,
@@ -72,11 +72,11 @@ def build_config() -> dict:
         "enable_kr_discussion_sentiment": True,
         "role_models": {                     # override the two deep judges -> Opus / max
             "research_manager": {
-                "provider": "vertex_anthropic", "model": "claude-opus-4-8",
+                "provider": "vertex_anthropic", "model": "claude-opus-5",
                 "anthropic_effort": "max",
             },
             "portfolio_manager": {
-                "provider": "vertex_anthropic", "model": "claude-opus-4-8",
+                "provider": "vertex_anthropic", "model": "claude-opus-5",
                 "anthropic_effort": "max",
             },
         },

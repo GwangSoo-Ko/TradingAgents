@@ -17,9 +17,9 @@ VERTEX_DEBATE_PRESET: dict[str, dict[str, str]] = {
     "bear_researcher":      {"provider": "vertex_grok",      "model": "xai/grok-4.3"},
     "aggressive_debator":   {"provider": "vertex_grok",      "model": "xai/grok-4.3"},
     "conservative_debator": {"provider": "vertex_gemini",    "model": "gemini-3.5-flash"},
-    "neutral_debator":      {"provider": "vertex_anthropic", "model": "claude-opus-4-8"},
-    "research_manager":     {"provider": "vertex_anthropic", "model": "claude-opus-4-8"},
-    "portfolio_manager":    {"provider": "vertex_anthropic", "model": "claude-opus-4-8"},
+    "neutral_debator":      {"provider": "vertex_anthropic", "model": "claude-opus-5"},
+    "research_manager":     {"provider": "vertex_anthropic", "model": "claude-opus-5"},
+    "portfolio_manager":    {"provider": "vertex_anthropic", "model": "claude-opus-5"},
 }
 
 # Default model for roles not in the preset (analysts + trader) and for the
@@ -52,7 +52,7 @@ def apply_vertex_multimodel_config(
 # without an Anthropic/xAI API key run a normal single-model analysis on a
 # Vertex-hosted Claude or Grok. The provider key IS the real vertex_* client key.
 VERTEX_SINGLE_MODELS: dict[str, str] = {
-    "vertex_anthropic": "claude-opus-4-8",
+    "vertex_anthropic": "claude-opus-5",
     "vertex_grok":      "xai/grok-4.3",
 }
 
