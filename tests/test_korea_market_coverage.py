@@ -8,7 +8,7 @@ and fundamentals derivation are driven by mocked yfinance objects, and region
 selection is pure config logic.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -143,6 +143,27 @@ class TestNewsDateWindowFallback:
         assert "BEFORE the window" in out      # fallback note present
         assert "OldB" in out and "OldA" in out  # older articles surfaced
         assert "FutureX" not in out             # future-dated never surfaced
+
+    def test_kst_morning_article_on_window_start_is_not_dropped(self, monkeypatch):
+        # An article stamped 08:00 KST on the FIRST day of the window is
+        # 2026-02-28T23:00Z -- just outside the UTC window. It must be surfaced
+        # as pre-window context, never silently discarded.
+        #
+        # Regression: the pre-window test truncated the offset
+        # (``pub_date.replace(tzinfo=None)`` -> 03-01 08:00, "not older than
+        # start") while ``_in_news_window`` converted it (-> 02-28 23:00Z,
+        # "outside"), so the article fell between both nets and was dropped by
+        # the branch commented ``future-dated: drop`` -- despite being in the
+        # past. Korean morning news on day one of a window vanished entirely.
+        kst = timezone(timedelta(hours=9))
+        articles = [
+            {"pub_date": datetime(2026, 3, 1, 8, 0, tzinfo=kst), "title": "SeoulMorning",
+             "publisher": "P", "summary": "s", "link": "l"},
+        ]
+        yn = self._patch(monkeypatch, articles)
+        out = yn.get_news_yfinance("005930.KS", "2026-03-01", "2026-03-07")
+        assert "SeoulMorning" in out
+        assert "BEFORE the window" in out  # correctly labeled, not silently dropped
 
     def test_no_articles_at_all_returns_none_message(self, monkeypatch):
         yn = self._patch(monkeypatch, [])

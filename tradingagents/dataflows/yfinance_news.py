@@ -143,10 +143,15 @@ def get_news_yfinance(
 
             # Filter by date if publish time is available
             if data["pub_date"]:
-                pub_date_naive = data["pub_date"].replace(tzinfo=None)
-                if pub_date_naive < start_dt:
+                # Classify on the SAME basis _in_news_window uses (UTC).
+                # Truncating the offset here instead let an offset-aware article
+                # miss both nets — e.g. 08:00 KST on the window's first day reads
+                # as "not older than start" naively but as 23:00Z the day before
+                # once converted — and it was dropped as if it were future-dated.
+                pub_utc = _as_utc(data["pub_date"])
+                if pub_utc < _as_utc(start_dt):
                     # Older than the window — keep as a fallback candidate.
-                    pre_window.append((pub_date_naive, data))
+                    pre_window.append((pub_utc, data))
                     continue
                 if not _in_news_window(data["pub_date"], start_dt, end_dt):
                     continue  # future-dated: drop (never surface — look-ahead safety)
