@@ -97,7 +97,12 @@ def main(argv=None) -> None:
     final_state, decision = ta.propagate(args.ticker, args.date)
     print(decision)
     # Machine-readable trade plan for downstream callers that run this as a
-    # subprocess and parse stdout. Absent when the Portfolio Manager's
+    # subprocess and parse stdout. The known consumer is AlphaPulse
+    # (alphapulse/webapp/services/trade_plan.py), which turns this into order
+    # drafts. Renaming a field or dropping this line raises nothing on either
+    # side -- the consumer stores plan_status='unparsed' and the UI just says
+    # "no plan" -- so change it only together with that parser and its fixture.
+    # Absent when the Portfolio Manager's
     # structured call fell back to free text -- "no plan" is a valid state and
     # the consumer must not invent one. executive_summary/investment_thesis are
     # already in the saved report, so they are excluded to keep the line small.
