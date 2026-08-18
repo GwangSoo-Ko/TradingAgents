@@ -186,21 +186,22 @@ def render_trader_proposal(proposal: TraderProposal) -> str:
 
 
 class Tranche(BaseModel):
-    """One slice of a phased entry plan."""
+    """One slice of a phased execution plan."""
 
     seq: int = Field(description="Execution order, starting at 1.")
     pct: float = Field(
-        description="This tranche's share of the total position, in percent. "
-                    "All tranches must sum to 100.",
+        description="This tranche's share of the move from the current position to the "
+                    "target, in percent. All tranches must sum to 100.",
     )
     price_low: float | None = Field(
         default=None,
-        description="Lower bound of the entry price band, in the quote currency. "
-                    "Null when the tranche has no price band yet.",
+        description="Lower bound of the price band for this tranche, in the quote "
+                    "currency. Null when the tranche has no price band yet.",
     )
     price_high: float | None = Field(
         default=None,
-        description="Upper bound of the entry price band, in the quote currency.",
+        description="Upper bound of the price band for this tranche, in the quote "
+                    "currency.",
     )
     trigger: Literal["immediate", "price", "event"] = Field(
         description=(
@@ -260,8 +261,10 @@ class PortfolioDecision(BaseModel):
     )
     total_weight_pct: float | None = Field(
         default=None,
-        description="Total position size as a percent of portfolio NAV, e.g. 3.0 for 3%. "
-                    "This is the cap the whole entry plan builds up to.",
+        description="Target position size as a percent of portfolio NAV that this plan "
+                    "converges to, e.g. 3.0 for 3%. For Buy/Overweight this is the size "
+                    "to build up to; for Underweight this is the remaining exposure to "
+                    "converge down to.",
     )
     stop_loss: float | None = Field(
         default=None,
@@ -269,8 +272,12 @@ class PortfolioDecision(BaseModel):
     )
     tranches: list[Tranche] = Field(
         default_factory=list,
-        description="Phased entry plan. Leave empty for a single-shot entry; otherwise "
-                    "list every tranche with its share and trigger, summing to 100 percent.",
+        description="Phased execution plan. Each tranche is a slice of the move from the "
+                    "current position to the target, so pct is that tranche's share of "
+                    "the delta (not of the whole portfolio): on a Buy the delta is the "
+                    "whole target, on an Underweight it is the amount being reduced. "
+                    "Leave empty for a single-shot move; otherwise list every tranche "
+                    "with its share and trigger, summing to 100 percent.",
     )
 
     @field_validator("price_target", "total_weight_pct", "stop_loss", mode="before")

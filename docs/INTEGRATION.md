@@ -89,8 +89,9 @@ complete_report.md          # consolidated report; header has company label + a
 5_portfolio/decision.md     # the Portfolio Manager's final decision (rendered)
 ```
 
-The **final decision** is available three ways: stdout (the line before
-`Report saved:`), `5_portfolio/decision.md`, and `final_state["final_trade_decision"]`.
+The **final decision** is available three ways: stdout (the decision line before
+`Report saved:` — a `TRADE_PLAN_JSON:` line may follow it),
+`5_portfolio/decision.md`, and `final_state["final_trade_decision"]`.
 The heuristic **Buy/Hold/Sell** signal is the second return of `propagate()` /
 `process_signal()`.
 

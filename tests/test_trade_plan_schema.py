@@ -84,8 +84,41 @@ def test_render_shows_plan_when_present():
                           trigger="immediate")],
     ))
 
-    assert "12050" in md
+    assert "**Position Size**: 3.0%" in md
+    assert "**Stop Loss**: 12050" in md
+    assert "**Entry Plan**:" in md
     assert "13200" in md
+
+
+def test_render_appends_plan_after_the_existing_headers():
+    """신규 블록은 기존 헤더 '뒤'에 온다.
+
+    부분문자열만 보면 Entry Plan 을 Executive Summary 위로 올리는 회귀가 green 으로
+    통과한다 — 다운스트림(메모리 로그·CLI·리포트 작성기)은 순서를 전제로 읽는다.
+    """
+    md = render_pm_decision(_decision(
+        price_target=14000,
+        time_horizon="6-12개월",
+        total_weight_pct=3.0,
+        stop_loss=12050,
+        tranches=[Tranche(seq=1, pct=100, price_low=13200, price_high=13400,
+                          trigger="immediate")],
+    ))
+
+    order = [
+        "**Rating**",
+        "**Executive Summary**",
+        "**Investment Thesis**",
+        "**Price Target**",
+        "**Time Horizon**",
+        "**Position Size**",
+        "**Stop Loss**",
+        "**Entry Plan**",
+    ]
+    positions = [md.index(header) for header in order]
+    assert positions == sorted(positions), dict(zip(order, positions, strict=True))
+    # The tranche lines belong under the Entry Plan header, not above it.
+    assert md.index("**Entry Plan**") < md.index("- #1 ")
 
 
 def test_invoke_structured_returns_object_alongside_markdown():

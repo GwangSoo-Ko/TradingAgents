@@ -22,6 +22,7 @@ from tradingagents.agents.schemas import (
     SentimentReport,
     TraderAction,
     TraderProposal,
+    Tranche,
     render_research_plan,
     render_sentiment_report,
     render_trader_proposal,
@@ -96,6 +97,52 @@ class TestNullishFloatCoercion:
             price_target="N/A",
         )
         assert d.price_target is None
+
+    def test_pm_nullish_trade_plan_floats_coerce_to_none(self):
+        # The trade-plan floats ride the same validator as price_target. Without
+        # them listed, a model writing "N/A" into a sizing field would blow up
+        # the whole structured call and drop the run to free text -- i.e. no plan.
+        for sentinel in ("None", "N/A", "null", "-", "", "TBD"):
+            d = PortfolioDecision(
+                rating=PortfolioRating.OVERWEIGHT,
+                executive_summary="s",
+                investment_thesis="t",
+                total_weight_pct=sentinel,
+                stop_loss=sentinel,
+            )
+            assert d.total_weight_pct is None
+            assert d.stop_loss is None
+
+    def test_pm_real_trade_plan_numeric_strings_still_parse(self):
+        d = PortfolioDecision(
+            rating=PortfolioRating.OVERWEIGHT,
+            executive_summary="s",
+            investment_thesis="t",
+            total_weight_pct="3.0",
+            stop_loss="12050",
+        )
+        assert d.total_weight_pct == 3.0
+        assert d.stop_loss == 12050.0
+
+    def test_tranche_nullish_price_band_coerces_to_none(self):
+        # An event-triggered tranche has no band yet; a model often writes "N/A"
+        # there rather than omitting the key.
+        for sentinel in ("None", "N/A", "null", "-", "", "TBD"):
+            t = Tranche(
+                seq=1,
+                pct=100,
+                trigger="immediate",
+                price_low=sentinel,
+                price_high=sentinel,
+            )
+            assert t.price_low is None
+            assert t.price_high is None
+
+    def test_tranche_real_numeric_band_still_parses(self):
+        t = Tranche(seq=1, pct=100, trigger="immediate",
+                    price_low="13200", price_high="13400.5")
+        assert t.price_low == 13200.0
+        assert t.price_high == 13400.5
 
 
 @pytest.mark.unit
