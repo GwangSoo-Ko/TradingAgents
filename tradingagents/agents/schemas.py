@@ -185,6 +185,43 @@ def render_trader_proposal(proposal: TraderProposal) -> str:
 # ---------------------------------------------------------------------------
 
 
+class Tranche(BaseModel):
+    """One slice of a phased entry plan."""
+
+    seq: int = Field(description="Execution order, starting at 1.")
+    pct: float = Field(
+        description="This tranche's share of the total position, in percent. "
+                    "All tranches must sum to 100.",
+    )
+    price_low: float | None = Field(
+        default=None,
+        description="Lower bound of the entry price band, in the quote currency. "
+                    "Null when the tranche has no price band yet.",
+    )
+    price_high: float | None = Field(
+        default=None,
+        description="Upper bound of the entry price band, in the quote currency.",
+    )
+    trigger: Literal["immediate", "price", "event"] = Field(
+        description=(
+            "When this tranche executes. 'immediate' = execute now at the band. "
+            "'price' = wait for a price condition. 'event' = wait for a named event "
+            "such as an earnings release. Only 'immediate' tranches are turned into "
+            "orders; the others are shown to the operator as pending conditions."
+        ),
+    )
+    condition: str | None = Field(
+        default=None,
+        description="Human-readable condition to wait for. Required when trigger is "
+                    "not 'immediate'; null otherwise.",
+    )
+
+    @field_validator("price_low", "price_high", mode="before")
+    @classmethod
+    def _nullish_float_to_none(cls, v):
+        return _coerce_optional_float(v)
+
+
 class PortfolioDecision(BaseModel):
     """Structured output produced by the Portfolio Manager.
 
@@ -221,8 +258,22 @@ class PortfolioDecision(BaseModel):
         default=None,
         description="Optional recommended holding period, e.g. '3-6 months'.",
     )
+    total_weight_pct: float | None = Field(
+        default=None,
+        description="Total position size as a percent of portfolio NAV, e.g. 3.0 for 3%. "
+                    "This is the cap the whole entry plan builds up to.",
+    )
+    stop_loss: float | None = Field(
+        default=None,
+        description="Stop-loss price in the quote currency.",
+    )
+    tranches: list[Tranche] = Field(
+        default_factory=list,
+        description="Phased entry plan. Leave empty for a single-shot entry; otherwise "
+                    "list every tranche with its share and trigger, summing to 100 percent.",
+    )
 
-    @field_validator("price_target", mode="before")
+    @field_validator("price_target", "total_weight_pct", "stop_loss", mode="before")
     @classmethod
     def _nullish_float_to_none(cls, v):
         return _coerce_optional_float(v)
@@ -247,6 +298,20 @@ def render_pm_decision(decision: PortfolioDecision) -> str:
         parts.extend(["", f"**Price Target**: {decision.price_target}"])
     if decision.time_horizon:
         parts.extend(["", f"**Time Horizon**: {decision.time_horizon}"])
+    if decision.total_weight_pct is not None:
+        parts.extend(["", f"**Position Size**: {decision.total_weight_pct}%"])
+    if decision.stop_loss is not None:
+        parts.extend(["", f"**Stop Loss**: {decision.stop_loss}"])
+    if decision.tranches:
+        parts.extend(["", "**Entry Plan**:"])
+        for t in decision.tranches:
+            band = (
+                f"{t.price_low}~{t.price_high}"
+                if t.price_low is not None and t.price_high is not None
+                else "—"
+            )
+            cond = f" ({t.condition})" if t.condition else ""
+            parts.append(f"- #{t.seq} {t.pct}% @ {band} [{t.trigger}]{cond}")
     return "\n".join(parts)
 
 

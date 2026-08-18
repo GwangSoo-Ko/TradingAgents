@@ -158,7 +158,7 @@ def create_sentiment_analyst(llm):
         # data is already in the prompt.
         formatted_messages = prompt.format_messages(messages=state["messages"])
 
-        report_text = invoke_structured_or_freetext(
+        report_text, _ = invoke_structured_or_freetext(
             structured_llm,
             llm,
             formatted_messages,

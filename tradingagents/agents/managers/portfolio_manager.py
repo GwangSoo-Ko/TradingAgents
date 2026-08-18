@@ -66,7 +66,7 @@ Be decisive and ground every conclusion in specific evidence from the analysts.
 
 {NO_EXTERNAL_TOOLS}{get_language_instruction()}"""
 
-        final_trade_decision = invoke_structured_or_freetext(
+        final_trade_decision, decision_obj = invoke_structured_or_freetext(
             structured_llm,
             llm,
             prompt,
@@ -90,6 +90,7 @@ Be decisive and ground every conclusion in specific evidence from the analysts.
         return {
             "risk_debate_state": new_risk_debate_state,
             "final_trade_decision": final_trade_decision,
+            "portfolio_decision_obj": decision_obj,
         }
 
     return portfolio_manager_node

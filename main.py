@@ -96,6 +96,16 @@ def main(argv=None) -> None:
     )
     final_state, decision = ta.propagate(args.ticker, args.date)
     print(decision)
+    # Machine-readable trade plan for downstream callers that run this as a
+    # subprocess and parse stdout. Absent when the Portfolio Manager's
+    # structured call fell back to free text -- "no plan" is a valid state and
+    # the consumer must not invent one. executive_summary/investment_thesis are
+    # already in the saved report, so they are excluded to keep the line small.
+    plan_obj = final_state.get("portfolio_decision_obj")
+    if plan_obj is not None:
+        print("TRADE_PLAN_JSON: " + plan_obj.model_dump_json(
+            exclude={"executive_summary", "investment_thesis"},
+        ))
     # Write the CLI's rich-header report tree: per-section 1_analysts..5_portfolio
     # markdown plus a consolidated complete_report.md whose header carries the
     # resolved company label and a per-role model table. Reuse the CLI writer so

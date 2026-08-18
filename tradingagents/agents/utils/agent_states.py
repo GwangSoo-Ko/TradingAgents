@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from langgraph.graph import MessagesState
 from typing_extensions import TypedDict
@@ -73,4 +73,11 @@ class AgentState(MessagesState):
         RiskDebateState, "Current state of the debate on evaluating risk"
     ]
     final_trade_decision: Annotated[str, "Final decision made by the Risk Analysts"]
+    # The typed PortfolioDecision behind final_trade_decision, or None when the
+    # structured call fell back to free text. Declared here because langgraph
+    # silently DROPS keys a node returns that the state schema does not list --
+    # no exception, the value just never reaches the caller.
+    portfolio_decision_obj: Annotated[
+        Any, "Typed PortfolioDecision from the Portfolio Manager (None on free-text fallback)"
+    ]
     past_context: Annotated[str, "Memory log context injected at run start (same-ticker decisions + cross-ticker lessons)"]

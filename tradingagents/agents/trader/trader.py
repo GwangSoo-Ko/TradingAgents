@@ -50,7 +50,7 @@ def create_trader(llm):
             },
         ]
 
-        trader_plan = invoke_structured_or_freetext(
+        trader_plan, _ = invoke_structured_or_freetext(
             structured_llm,
             llm,
             messages,

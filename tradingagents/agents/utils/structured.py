@@ -62,13 +62,18 @@ def invoke_structured_or_freetext(
     prompt: Any,
     render: Callable[[T], str],
     agent_name: str,
-) -> str:
+) -> tuple[str, T | None]:
     """Run the structured call and render to markdown; fall back to free-text on any failure.
 
     ``prompt`` is whatever the underlying LLM accepts (a string for chat
     invocations, a list of message dicts for chat models that take that
     shape). The same value is forwarded to the free-text path so the
     fallback sees the same input the structured call did.
+
+    Returns ``(markdown, obj)``. ``obj`` is the typed result when the structured
+    path succeeded, or ``None`` when the free-text fallback fired. Callers that
+    only need the markdown discard the second element; the Portfolio Manager
+    keeps it so the run can emit a machine-readable trade plan.
     """
     if structured_llm is not None:
         try:
@@ -78,7 +83,7 @@ def invoke_structured_or_freetext(
                 # the tool, leaving the parser with nothing to return. Treat it
                 # as a structured miss and fall back, with a clear reason.
                 raise ValueError("structured output returned no parsed result")
-            return render(result)
+            return render(result), result
         except Exception as exc:
             logger.warning(
                 "%s: structured-output invocation failed (%s); retrying once as free text",
@@ -86,4 +91,4 @@ def invoke_structured_or_freetext(
             )
 
     response = plain_llm.invoke(prompt)
-    return response.content
+    return response.content, None

@@ -163,10 +163,13 @@ def test_invoke_structured_falls_back_when_result_is_none():
     plain = MagicMock()
     plain.invoke.return_value = MagicMock(content="FREETEXT")
 
-    out = invoke_structured_or_freetext(
+    # The helper now returns (markdown, obj); the fallback path yields obj=None
+    # so callers can tell "no structured plan" from "plan present".
+    out, obj = invoke_structured_or_freetext(
         structured, plain, "prompt", render=lambda r: r.rating, agent_name="t"
     )
     assert out == "FREETEXT"
+    assert obj is None
     plain.invoke.assert_called_once()
 
 

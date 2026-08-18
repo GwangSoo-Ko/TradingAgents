@@ -94,6 +94,23 @@ The **final decision** is available three ways: stdout (the line before
 The heuristic **Buy/Hold/Sell** signal is the second return of `propagate()` /
 `process_signal()`.
 
+The **machine-readable trade plan** is available two ways:
+
+- `final_state["portfolio_decision_obj"]` — the typed `PortfolioDecision`
+  (rating, `price_target`, `time_horizon`, `total_weight_pct`, `stop_loss`,
+  `tranches[]`), or `None` when the Portfolio Manager's structured call fell
+  back to free text.
+- `main.py` prints one line `TRADE_PLAN_JSON: {...}` right after the decision
+  when that object exists (`executive_summary` / `investment_thesis` excluded —
+  they are already in the report). **The line is absent when there is no
+  structured plan**; "no plan" is a valid outcome and a consumer must not
+  synthesise one by parsing the prose.
+
+`tranches[].trigger` is one of `immediate` / `price` / `event`. The tranches are
+a phased *execution* plan whose direction follows `rating`: on a Buy/Overweight
+they scale in, on an Underweight/Sell they scale out. Read `rating` before
+turning an `immediate` tranche into an order.
+
 ### Two consumption modes for a host app (e.g. alpha-pulse)
 
 - **(A) Shell out + read reports** — matches "run `main.py`, use the reports".
