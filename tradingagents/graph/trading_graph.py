@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -72,6 +73,26 @@ def _coerce_max_retries(value):
     if n < 0:
         raise ValueError(f"llm_max_retries must be >= 0, got {n}")
     return n
+
+
+def _read_position_context() -> str:
+    """env 에서 계좌 스냅샷 JSON 을 읽는다. 없거나 깨졌으면 빈 문자열.
+
+    파싱 실패로 분석을 죽이지 않는다 -- 계좌 맥락은 판단의 질을 높이는 부가
+    정보이고, 없으면 예전 품질로 떨어질 뿐이다.
+    """
+    raw = os.environ.get("TRADINGAGENTS_POSITION_CONTEXT", "").strip()
+    if not raw:
+        return ""
+    try:
+        json.loads(raw)
+    except (TypeError, ValueError):
+        print(
+            "warning: TRADINGAGENTS_POSITION_CONTEXT is not valid JSON -- ignoring",
+            file=sys.stderr,
+        )
+        return ""
+    return raw
 
 
 class TradingAgentsGraph:
@@ -523,6 +544,7 @@ class TradingAgentsGraph:
             asset_type=asset_type,
             past_context=past_context,
             instrument_context=instrument_context,
+            position_context=_read_position_context(),
         )
         args = self.propagator.get_graph_args()
 

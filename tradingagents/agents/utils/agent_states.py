@@ -81,3 +81,9 @@ class AgentState(MessagesState):
         Any, "Typed PortfolioDecision from the Portfolio Manager (None on free-text fallback)"
     ]
     past_context: Annotated[str, "Memory log context injected at run start (same-ticker decisions + cross-ticker lessons)"]
+    position_context: Annotated[
+        str,
+        "Account/position snapshot JSON injected at run start. Decision-stage agents "
+        "(Portfolio Manager, Trader) only -- analysts stay unaware to avoid the "
+        "disposition effect. Empty string when not supplied.",
+    ]
