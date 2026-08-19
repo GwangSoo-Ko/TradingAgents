@@ -185,6 +185,91 @@ def render_trader_proposal(proposal: TraderProposal) -> str:
 # ---------------------------------------------------------------------------
 
 
+class TrancheTrigger(BaseModel):
+    """One condition that fires a tranche. Several on one tranche means whichever
+    comes first wins (OCO)."""
+
+    kind: Literal["take_profit", "stop", "trailing", "event"] = Field(
+        description=(
+            "What kind of condition this is. 'take_profit' = price rose to a level "
+            "worth realising. 'stop' = price fell through a level. 'trailing' = a "
+            "drop from the running high. 'event' = a named event such as an "
+            "earnings release."
+        ),
+    )
+    price: float | None = Field(
+        default=None,
+        description="Trigger price in the quote currency, for 'take_profit' and 'stop'.",
+    )
+    trail_pct: float | None = Field(
+        default=None,
+        description="For 'trailing' only: percent drop from the running high, e.g. 8.0 for -8%.",
+    )
+    reference_price: float | None = Field(
+        default=None,
+        description=(
+            "An indicator value the condition refers to (a moving average, a channel "
+            "boundary). This is NOT a price to trade at -- put execution prices in the "
+            "tranche's price_low/price_high band."
+        ),
+    )
+    reference_label: str | None = Field(
+        default=None,
+        description="What reference_price is, e.g. '10EMA', '200SMA', 'range low'.",
+    )
+    condition: str | None = Field(
+        default=None,
+        description=(
+            "Free-text description of the condition, including technical criteria "
+            "(RSI, MACD, confirmation bars). Write it for a human to read."
+        ),
+    )
+
+    @field_validator("price", "trail_pct", "reference_price", mode="before")
+    @classmethod
+    def _nullish_float_to_none(cls, v):
+        return _coerce_optional_float(v)
+
+
+class ExitTarget(BaseModel):
+    """What a reduction plan converges to. The selling counterpart of total_weight_pct."""
+
+    kind: Literal["weight", "cost_recovery", "full"] = Field(
+        description=(
+            "'weight' = converge down to a remaining percent of NAV. 'cost_recovery' = "
+            "sell enough to take the original capital back out and hold the rest. "
+            "'full' = exit the position entirely."
+        ),
+    )
+    remaining_weight_pct: float | None = Field(
+        default=None,
+        description="For kind='weight' only: the percent of NAV to keep, e.g. 1.5 for 1.5%.",
+    )
+
+    @field_validator("remaining_weight_pct", mode="before")
+    @classmethod
+    def _nullish_float_to_none(cls, v):
+        return _coerce_optional_float(v)
+
+
+class KillSwitch(BaseModel):
+    """A full-exit condition that sits outside the tranche schedule and is watched
+    independently of it."""
+
+    price: float | None = Field(
+        default=None,
+        description="Price at which the whole remaining position is exited.",
+    )
+    condition: str = Field(
+        description="What triggers the full exit, written for a human to read.",
+    )
+
+    @field_validator("price", mode="before")
+    @classmethod
+    def _nullish_float_to_none(cls, v):
+        return _coerce_optional_float(v)
+
+
 class Tranche(BaseModel):
     """One slice of a phased execution plan."""
 
@@ -203,12 +288,20 @@ class Tranche(BaseModel):
         description="Upper bound of the price band for this tranche, in the quote "
                     "currency.",
     )
-    trigger: Literal["immediate", "price", "event"] = Field(
+    trigger: Literal["immediate", "conditional"] = Field(
         description=(
-            "When this tranche executes. 'immediate' = execute now at the band. "
-            "'price' = wait for a price condition. 'event' = wait for a named event "
-            "such as an earnings release. Only 'immediate' tranches are turned into "
-            "orders; the others are shown to the operator as pending conditions."
+            "'immediate' = execute now at the band; leave `triggers` empty. "
+            "'conditional' = wait; list every condition in `triggers`. "
+            "Only 'immediate' tranches become orders -- conditional ones are shown "
+            "to the operator as pending."
+        ),
+    )
+    triggers: list[TrancheTrigger] = Field(
+        default_factory=list,
+        description=(
+            "Conditions that fire this tranche, for trigger='conditional'. More than "
+            "one means whichever comes first wins -- do NOT split one quantity across "
+            "several tranches to express that, because pct must partition the move."
         ),
     )
     condition: str | None = Field(
@@ -221,6 +314,13 @@ class Tranche(BaseModel):
     @classmethod
     def _nullish_float_to_none(cls, v):
         return _coerce_optional_float(v)
+
+    @field_validator("triggers", mode="before")
+    @classmethod
+    def _null_list_to_empty(cls, v):
+        # An explicit null for an omitted list would fail validation and take the
+        # whole plan down with it (structured call -> free-text fallback, no plan).
+        return [] if v is None else v
 
 
 class PortfolioDecision(BaseModel):
@@ -261,10 +361,9 @@ class PortfolioDecision(BaseModel):
     )
     total_weight_pct: float | None = Field(
         default=None,
-        description="Target position size as a percent of portfolio NAV that this plan "
-                    "converges to, e.g. 3.0 for 3%. For Buy/Overweight this is the size "
-                    "to build up to; for Underweight this is the remaining exposure to "
-                    "converge down to.",
+        description="Target position size as a percent of portfolio NAV to build up "
+                    "to, e.g. 3.0 for 3%. For Buy/Overweight. For reductions use "
+                    "exit_target instead.",
     )
     stop_loss: float | None = Field(
         default=None,
@@ -278,6 +377,20 @@ class PortfolioDecision(BaseModel):
                     "whole target, on an Underweight it is the amount being reduced. "
                     "Leave empty for a single-shot move; otherwise list every tranche "
                     "with its share and trigger, summing to 100 percent.",
+    )
+    exit_target: ExitTarget | None = Field(
+        default=None,
+        description=(
+            "For reduction ratings (Underweight, Sell): what the plan converges to. "
+            "Use this instead of total_weight_pct, which is for building a position up."
+        ),
+    )
+    kill_switch: KillSwitch | None = Field(
+        default=None,
+        description=(
+            "A full-exit condition watched independently of the tranche schedule. "
+            "Its price must be below the entry band -- this is a long-only system."
+        ),
     )
 
     @field_validator("price_target", "total_weight_pct", "stop_loss", mode="before")
@@ -319,6 +432,30 @@ def render_pm_decision(decision: PortfolioDecision) -> str:
             )
             cond = f" ({t.condition})" if t.condition else ""
             parts.append(f"- #{t.seq} {t.pct}% @ {band} [{t.trigger}]{cond}")
+            for trg in t.triggers:
+                bits = [trg.kind]
+                if trg.price is not None:
+                    bits.append(f"@{trg.price:g}")
+                if trg.trail_pct is not None:
+                    bits.append(f"-{trg.trail_pct:g}%")
+                if trg.reference_price is not None:
+                    label = trg.reference_label or "ref"
+                    bits.append(f"{label}={trg.reference_price:g}")
+                if trg.condition:
+                    bits.append(trg.condition)
+                parts.append(f"    - {' '.join(bits)}")
+    if decision.exit_target is not None:
+        et = decision.exit_target
+        detail = (
+            f" ({et.remaining_weight_pct:g}%)"
+            if et.kind == "weight" and et.remaining_weight_pct is not None
+            else ""
+        )
+        parts += ["", f"**Exit Target**: {et.kind}{detail}"]
+    if decision.kill_switch is not None:
+        ks = decision.kill_switch
+        price = f" @ {ks.price:g}" if ks.price is not None else ""
+        parts += ["", f"**Kill Switch**{price}: {ks.condition}"]
     return "\n".join(parts)
 
 

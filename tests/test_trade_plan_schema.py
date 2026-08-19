@@ -14,6 +14,7 @@ from tradingagents.agents.schemas import (
     PortfolioDecision,
     PortfolioRating,
     Tranche,
+    TrancheTrigger,
     render_pm_decision,
 )
 
@@ -46,8 +47,10 @@ def test_tranches_round_trip_through_json():
         tranches=[
             Tranche(seq=1, pct=30, price_low=13200, price_high=13400, trigger="immediate"),
             Tranche(seq=2, pct=30, price_low=12900, price_high=13000,
-                    trigger="price", condition="볼린저 하단 접근 시"),
-            Tranche(seq=3, pct=40, trigger="event", condition="8월 실적 확인"),
+                    trigger="conditional", condition="볼린저 하단 접근 시",
+                    triggers=[TrancheTrigger(kind="stop", price=12900)]),
+            Tranche(seq=3, pct=40, trigger="conditional", condition="8월 실적 확인",
+                    triggers=[TrancheTrigger(kind="event", condition="8월 실적 확인")]),
         ],
     )
 
@@ -55,14 +58,44 @@ def test_tranches_round_trip_through_json():
 
     assert payload["total_weight_pct"] == 3.0
     assert payload["stop_loss"] == 12050
-    assert [t["trigger"] for t in payload["tranches"]] == ["immediate", "price", "event"]
+    assert [t["trigger"] for t in payload["tranches"]] == [
+        "immediate", "conditional", "conditional",
+    ]
     assert payload["tranches"][2]["price_low"] is None
+    # The triggers list has to survive the dump too -- it is where the sell-side
+    # conditions live now, and the consumer reads only this JSON.
+    assert payload["tranches"][0]["triggers"] == []
+    assert payload["tranches"][1]["triggers"] == [{
+        "kind": "stop", "price": 12900.0, "trail_pct": None,
+        "reference_price": None, "reference_label": None, "condition": None,
+    }]
 
 
 def test_tranche_rejects_unknown_trigger():
-    """trigger 는 셋뿐이다 — 오타가 조용히 통과하면 초안 판정이 무너진다."""
+    """trigger 는 둘뿐이다 — 오타가 조용히 통과하면 초안 판정이 무너진다."""
     with pytest.raises(ValueError):
         Tranche(seq=1, pct=100, trigger="asap")
+
+
+def test_tranche_rejects_the_retired_trigger_vocabulary():
+    """'price'/'event' 는 trigger 가 아니라 triggers[].kind 로 옮겨갔다.
+
+    옛 값이 계속 통과하면 조건이 트랜치 사이로 흩어져 pct 분할 계약이 깨진다 —
+    같은 물량을 두 번 세고도 합계 100 검증만 통과한다.
+    """
+    for retired in ("price", "event"):
+        with pytest.raises(ValueError):
+            Tranche(seq=1, pct=100, trigger=retired)
+
+
+def test_immediate_tranche_defaults_to_no_triggers():
+    """즉시 집행분에는 조건이 없다 — 소비자가 주문으로 바꾸는 것은 이쪽뿐이다."""
+    assert Tranche(seq=1, pct=100, trigger="immediate").triggers == []
+
+
+def test_null_triggers_do_not_discard_the_whole_plan():
+    """모델이 생략 대신 null 을 쓰면 검증이 터져 계획 전체가 자유텍스트로 폴백한다."""
+    assert Tranche(seq=1, pct=100, trigger="immediate", triggers=None).triggers == []
 
 
 def test_render_keeps_existing_markdown_shape():
