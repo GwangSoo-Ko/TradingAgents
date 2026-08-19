@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from tradingagents.agents.schemas import PortfolioDecision, render_pm_decision
 from tradingagents.agents.utils.agent_utils import (
+    build_position_block,
     get_instrument_context_from_state,
     get_language_instruction,
 )
@@ -39,11 +40,16 @@ def create_portfolio_manager(llm):
             if past_context
             else ""
         )
+        # Decision stage only -- the analysts and the Bull/Bear debate argue from
+        # unbiased ground on purpose. Empty string when nothing was injected, so
+        # the heading disappears with it.
+        position_block = build_position_block(state)
 
         prompt = f"""As the Portfolio Manager, synthesize the risk analysts' debate and deliver the final trading decision.
 
 {instrument_context}
 
+{position_block}
 ---
 
 **Rating Scale** (use exactly one):

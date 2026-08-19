@@ -1,4 +1,5 @@
 import functools
+import json
 import logging
 from collections.abc import Mapping
 from typing import Any
@@ -42,6 +43,7 @@ __all__ = [
     "build_instrument_context",
     "resolve_instrument_identity",
     "get_instrument_context_from_state",
+    "build_position_block",
     "get_language_instruction",
     "create_msg_delete",
 ]
@@ -214,6 +216,54 @@ def get_instrument_context_from_state(state: Mapping[str, Any]) -> str:
         str(state["company_of_interest"]),
         state.get("asset_type", "stock"),
     )
+
+
+def build_position_block(state: Mapping[str, Any]) -> str:
+    """Render the account snapshot for decision-stage agents.
+
+    Returns an empty string -- heading included -- when no context was injected.
+    A bare heading with nothing under it reads to the model as "something should
+    be here but isn't", which is worse than silence.
+
+    Analysts never call this: knowing we hold the name biases them toward the
+    position (disposition effect), and the Bull/Bear debate is built on the two
+    sides arguing from the same unbiased ground. Only the Portfolio Manager and
+    the Trader -- the two stages that actually size and direct an order -- read it.
+    """
+    raw = str(state.get("position_context") or "").strip()
+    if not raw:
+        return ""
+    try:
+        ctx = json.loads(raw)
+    except (TypeError, ValueError):
+        return ""
+    if not isinstance(ctx, dict):
+        return ""
+
+    cur = ctx.get("currency") or ""
+    qty = ctx.get("held_qty")
+    lines = ["**Current Position and Account**"]
+    if not qty:
+        lines.append("- This name is **not currently held**. Any plan is a fresh entry.")
+    else:
+        lines.append(f"- Holding: {qty} shares at an average cost of {ctx.get('avg_price')} {cur}")
+        if ctx.get("current_price") is not None:
+            lines.append(f"- Last price: {ctx['current_price']} {cur}")
+        if ctx.get("unrealized_pnl_pct") is not None:
+            lines.append(f"- Unrealised P&L: {ctx['unrealized_pnl_pct']}%")
+        if ctx.get("current_weight_pct") is not None:
+            lines.append(f"- Current weight: {ctx['current_weight_pct']}% of NAV")
+    if ctx.get("cash") is not None:
+        lines.append(f"- Cash available: {ctx['cash']} {cur}")
+    if ctx.get("total_nav") is not None:
+        lines.append(f"- Total account NAV: {ctx['total_nav']} {cur}")
+    lines.append(
+        "Use these figures to size and direct the decision. **Do not quote the raw "
+        "account numbers in your written output** -- refer to sizing in percentages "
+        "of NAV. The written decision is archived and reused as context on later runs, "
+        "where these balances will be stale."
+    )
+    return "\n".join(lines) + "\n"
 
 
 def create_msg_delete():

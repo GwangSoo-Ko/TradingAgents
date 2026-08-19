@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -93,6 +94,62 @@ def _read_position_context() -> str:
         )
         return ""
     return raw
+
+
+# Account figures the archive must never carry. Percentages (weight, P&L) and the
+# last traded price are deliberately absent: the prompt tells the model to express
+# sizing in percent, and a price level is public market data, not a balance.
+_ACCOUNT_NUMBER_KEYS = ("cash", "total_nav", "held_qty", "avg_price")
+
+
+def _account_number_forms(value: Any) -> set[str]:
+    """Every textual shape one injected figure can take in the model's prose.
+
+    Models re-render numbers for humans, so ``456535870`` comes back as
+    ``456,535,870`` about as often as it comes back bare. Matching only the raw
+    form would make the scrub decorative.
+    """
+    forms = {str(value).strip()}
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        forms.add(f"{int(value):,}" if float(value).is_integer() else f"{value:,}")
+    return {f for f in forms if f}
+
+
+def scrub_account_numbers(text: str, position_context: str) -> str:
+    """Remove injected account figures from text about to be archived.
+
+    The prompt asks the model not to quote them, but the Portfolio Manager prompt
+    also asks its executive summary to cover position sizing -- the two pull in
+    opposite directions, so the instruction alone is not enough. Archived
+    decisions feed ``get_past_context(n_same=5)``, so one leak colours the next
+    five runs with balances that are, by then, wrong.
+
+    Only the memory-log copy is scrubbed. The saved report and the state the
+    operator sees keep the model's original wording.
+    """
+    if not position_context or not text:
+        return text
+    try:
+        ctx = json.loads(position_context)
+    except (TypeError, ValueError):
+        return text
+    if not isinstance(ctx, dict):
+        return text
+
+    forms: set[str] = set()
+    for key in _ACCOUNT_NUMBER_KEYS:
+        value = ctx.get(key)
+        if value is None or isinstance(value, bool) or value == 0:
+            continue
+        forms |= _account_number_forms(value)
+
+    out = text
+    # Longest first, and only on a standalone number: a bare `1` share count must
+    # not turn every digit in the decision into a redaction, and a short figure
+    # must not eat part of a longer one (avg_price 10900 inside total_nav 109000).
+    for form in sorted(forms, key=len, reverse=True):
+        out = re.sub(rf"(?<![\d,.]){re.escape(form)}(?![\d,.])", "[redacted]", out)
+    return out
 
 
 class TradingAgentsGraph:
@@ -583,10 +640,15 @@ class TradingAgentsGraph:
         self._log_state(trade_date, final_state)
 
         # Store decision for deferred reflection on the next same-ticker run.
+        # Scrub the archived copy only -- `final_state` (and therefore the saved
+        # report and the operator's view) keeps the model's original wording.
         self.memory_log.store_decision(
             ticker=company_name,
             trade_date=trade_date,
-            final_trade_decision=final_state["final_trade_decision"],
+            final_trade_decision=scrub_account_numbers(
+                final_state["final_trade_decision"],
+                final_state.get("position_context", ""),
+            ),
         )
 
         # Clear checkpoint on successful completion to avoid stale state.
