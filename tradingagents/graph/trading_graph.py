@@ -102,17 +102,33 @@ def _read_position_context() -> str:
 _ACCOUNT_NUMBER_KEYS = ("cash", "total_nav", "held_qty", "avg_price")
 
 
+# A figure with fewer digits than this is not account data in any useful sense --
+# it is guessable, it is not a balance, and redacting it wrecks the archive: a
+# 1-share holding turns "R:R 1 to 3; Phase 1 entry" into two redactions. Every
+# realistic cash/NAV figure, and every avg_price above 9.99, clears the bar.
+_MIN_REDACTED_DIGITS = 3
+
+
 def _account_number_forms(value: Any) -> set[str]:
     """Every textual shape one injected figure can take in the model's prose.
 
-    Models re-render numbers for humans, so ``456535870`` comes back as
-    ``456,535,870`` about as often as it comes back bare. Matching only the raw
-    form would make the scrub decorative.
+    Three shapes, not one. Models re-render numbers for humans, so ``456535870``
+    comes back as ``456,535,870`` about as often as it comes back bare -- and a
+    producer that hands us ``456535870.0`` (JSON has one number type; whether the
+    caller sends int or float is not pinned) must still redact the bare integer
+    the model actually writes.
     """
     forms = {str(value).strip()}
     if isinstance(value, (int, float)) and not isinstance(value, bool):
-        forms.add(f"{int(value):,}" if float(value).is_integer() else f"{value:,}")
-    return {f for f in forms if f}
+        if float(value).is_integer():
+            forms.add(str(int(value)))
+            forms.add(f"{int(value):,}")
+        else:
+            forms.add(f"{value:,}")
+    return {
+        f for f in forms
+        if sum(c.isdigit() for c in f) >= _MIN_REDACTED_DIGITS
+    }
 
 
 def scrub_account_numbers(text: str, position_context: str) -> str:
@@ -144,11 +160,15 @@ def scrub_account_numbers(text: str, position_context: str) -> str:
         forms |= _account_number_forms(value)
 
     out = text
-    # Longest first, and only on a standalone number: a bare `1` share count must
-    # not turn every digit in the decision into a redaction, and a short figure
-    # must not eat part of a longer one (avg_price 10900 inside total_nav 109000).
+    # Longest first, and only on a standalone number: a short figure must not eat
+    # part of a longer one (avg_price 10900 inside total_nav 109000, or inside
+    # 110900). The trailing `.`/`,` must NOT count as continuation on its own --
+    # "Cash of 456535870." and "Cash 456535870, plus room." are the likeliest
+    # phrasings, and treating the punctuation as part of the number let exactly
+    # those through. Only a digit *after* the separator continues the number
+    # (10900 inside 10900.50).
     for form in sorted(forms, key=len, reverse=True):
-        out = re.sub(rf"(?<![\d,.]){re.escape(form)}(?![\d,.])", "[redacted]", out)
+        out = re.sub(rf"(?<![\d.,]){re.escape(form)}(?![\d]|[.,]\d)", "[redacted]", out)
     return out
 
 

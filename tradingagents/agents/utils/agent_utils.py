@@ -227,8 +227,16 @@ def build_position_block(state: Mapping[str, Any]) -> str:
 
     Analysts never call this: knowing we hold the name biases them toward the
     position (disposition effect), and the Bull/Bear debate is built on the two
-    sides arguing from the same unbiased ground. Only the Portfolio Manager and
-    the Trader -- the two stages that actually size and direct an order -- read it.
+    sides arguing from the same unbiased ground.
+
+    **The Portfolio Manager is the only caller.** It is the last node in the
+    graph, so nothing it writes can reach another agent's prompt -- the isolation
+    is structural rather than defended. The Trader deliberately does NOT call
+    this even though it also sizes: its TraderProposal renders into
+    ``trader_investment_plan``, which the aggressive, conservative, and neutral
+    debators all embed verbatim, so injecting there would leak the account into
+    the exact three modules the isolation test pins. A source scan cannot see
+    position data arriving inside a different field.
     """
     raw = str(state.get("position_context") or "").strip()
     if not raw:

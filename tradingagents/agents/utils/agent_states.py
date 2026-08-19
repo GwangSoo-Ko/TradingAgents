@@ -83,7 +83,9 @@ class AgentState(MessagesState):
     past_context: Annotated[str, "Memory log context injected at run start (same-ticker decisions + cross-ticker lessons)"]
     position_context: Annotated[
         str,
-        "Account/position snapshot JSON injected at run start. Decision-stage agents "
-        "(Portfolio Manager, Trader) only -- analysts stay unaware to avoid the "
-        "disposition effect. Empty string when not supplied.",
+        "Account/position snapshot JSON injected at run start. Portfolio Manager "
+        "ONLY -- it is the last node, so nothing it writes can reach another "
+        "agent's prompt. The Trader must not read it: its proposal renders into "
+        "trader_investment_plan, which all three risk debators embed verbatim. "
+        "Empty string when not supplied.",
     ]

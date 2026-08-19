@@ -20,18 +20,21 @@ import inspect
 import json
 from unittest.mock import MagicMock
 
+import pytest
+
 import tradingagents.agents.analysts.fundamentals_analyst as fundamentals
 import tradingagents.agents.analysts.market_analyst as market
 import tradingagents.agents.analysts.news_analyst as news
 import tradingagents.agents.analysts.sentiment_analyst as sentiment
 import tradingagents.agents.analysts.social_media_analyst as social
+import tradingagents.agents.managers.research_manager as research_manager
 import tradingagents.agents.researchers.bear_researcher as bear
 import tradingagents.agents.researchers.bull_researcher as bull
 import tradingagents.agents.risk_mgmt.aggressive_debator as aggressive
 import tradingagents.agents.risk_mgmt.conservative_debator as conservative
 import tradingagents.agents.risk_mgmt.neutral_debator as neutral
+import tradingagents.agents.trader.trader as trader
 from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
-from tradingagents.agents.trader.trader import create_trader
 from tradingagents.agents.utils.agent_states import AgentState
 from tradingagents.agents.utils.agent_utils import build_position_block
 from tradingagents.graph.propagation import Propagator
@@ -260,10 +263,26 @@ def test_run_graph_does_not_scrub_the_state_the_operator_sees(monkeypatch):
     assert returned_state["final_trade_decision"] == decision
 
 
-def test_analysts_never_read_position_context():
-    """처분 효과 차단이 코드로 지켜지는지 -- 주석이 아니라 소스로 확인한다."""
+def test_only_the_portfolio_manager_reads_position_context():
+    """처분 효과 차단이 코드로 지켜지는지 -- 주석이 아니라 소스로 확인한다.
+
+    Trader 와 Research Manager 가 이 목록에 있는 이유는 미묘하다. 둘 다 사이징을
+    하지만, 둘 다 **마지막 노드가 아니다**:
+
+    - Trader 의 TraderProposal 은 render_trader_proposal 로 position_sizing·
+      reasoning 을 trader_investment_plan 에 렌더한다. aggressive/conservative/
+      neutral 세 토론자가 그 문자열을 **그대로** 프롬프트에 박는다
+      (setup.py: Trader -> Aggressive -> ... -> PM). Trader 에 주입하면 계좌가
+      바로 그 세 모듈에 도달한다 -- 이 테스트가 지키려는 그 모듈들에.
+    - Research Manager 의 investment_plan 은 PM 이 되읽는 사이징 입력이라
+      가장 매력적인 미래 주입 지점이다.
+
+    소스 스캔은 '다른 필드에 실려 들어오는 보유 정보'를 볼 수 없다. 그래서
+    유일한 안전한 주입 지점은 그래프의 마지막 노드인 PM 하나뿐이다.
+    """
     for mod in (market, news, sentiment, social, fundamentals,
-                bull, bear, aggressive, conservative, neutral):
+                bull, bear, aggressive, conservative, neutral,
+                trader, research_manager):
         src = inspect.getsource(mod)
         assert "position_context" not in src, f"{mod.__name__} 이 보유를 읽는다"
         assert "build_position_block" not in src, f"{mod.__name__} 이 보유를 읽는다"
@@ -326,12 +345,91 @@ def test_portfolio_manager_prompt_has_no_heading_when_context_absent():
     assert "Current Position" not in prompt
 
 
-def test_trader_prompt_carries_the_position_block():
-    prompt = _capture_prompt(create_trader, _CTX)
-    assert "2697" in prompt, "Trader 프롬프트에 보유 수량이 없다"
-    assert "Current Position" in prompt
+
+# --- 리뷰 후속: 스크럽이 실제 문장에서 새던 구멍들 ---------------------------
 
 
-def test_trader_prompt_has_no_heading_when_context_absent():
-    prompt = _capture_prompt(create_trader, "")
-    assert "Current Position" not in prompt
+@pytest.mark.parametrize("text", [
+    "Cash of 456535870.",
+    "Cash 456535870, plus room.",
+    "NAV is 456,535,870.",
+    "We hold 2697.",
+])
+def test_scrub_catches_figures_at_sentence_end_and_before_a_comma(text):
+    """가장 흔한 어법이 정확히 새던 자리다.
+
+    이전 lookahead `(?![\\d,.])` 는 마침표·쉼표를 '숫자의 연속'으로 봐서, 문장
+    끝(`...870.`)과 쉼표 앞(`...870,`)의 숫자를 통째로 통과시켰다. 브리프가 준
+    두 테스트는 둘 다 숫자 뒤에 공백을 두는 바람에 이 구멍을 못 봤다 -- 즉
+    스위트는 이 태스크가 막으려는 바로 그 유출에 눈이 멀어 있었다.
+    """
+    out = scrub_account_numbers(text, _CTX)
+    assert "456535870" not in out
+    assert "456,535,870" not in out
+    assert "2697" not in out
+    assert "[redacted]" in out
+
+
+@pytest.mark.parametrize("text,unchanged_because", [
+    ("Stop below 109000.", "109000 은 avg_price 10900 을 품고 있을 뿐 다른 숫자다"),
+    ("Entry at 110900.", "110900 도 마찬가지 -- 앞쪽 경계"),
+    ("Average cost basis 10900.50 per share.", "10900.50 은 10900 의 연속이다"),
+])
+def test_scrub_still_refuses_to_eat_part_of_a_longer_number(text, unchanged_because):
+    assert scrub_account_numbers(text, _CTX) == text, unchanged_because
+
+
+def test_scrub_redacts_integral_floats_written_as_bare_integers():
+    """생산자가 10900.0 을 주고 모델이 10900 이라고 쓰면 -- 그 조합이 새면 안 된다.
+
+    JSON 에는 숫자 타입이 하나뿐이고 position_context 생산자(후속 태스크)가
+    int 로 줄지 float 로 줄지는 아직 못 박히지 않았다. 즉 이건 동전던지기다.
+    """
+    ctx = json.dumps({"held_qty": 2697.0, "avg_price": 10900.0,
+                      "cash": 456535870.0, "total_nav": 500769000.0})
+    text = "Average cost 10900 KRW; cash 456535870; NAV 500,769,000; 2697 shares."
+    out = scrub_account_numbers(text, ctx)
+    for leaked in ("10900", "456535870", "500,769,000", "2697"):
+        assert leaked not in out, f"{leaked} 가 살아남았다: {out}"
+
+
+def test_scrub_leaves_one_and_two_digit_figures_alone():
+    """1주 보유가 결정문의 모든 '1' 을 지우면 아카이브가 망가진다.
+
+    3자리 미만은 계좌 정보라고 부를 만한 게 못 된다(추측 가능하고, 잔고가
+    아니다). 반대로 현실적인 현금·NAV 는 전부 3자리를 넘는다.
+    """
+    ctx = json.dumps({"held_qty": 1, "avg_price": 12, "cash": 5000, "total_nav": 100000})
+    text = "R:R 1 to 3; Phase 1 entry; 12 month view."
+    assert scrub_account_numbers(text, ctx) == text
+    # 같은 맥락의 큰 값들은 여전히 지운다 -- 문턱이 스크럽 자체를 끄면 안 된다.
+    assert "5000" not in scrub_account_numbers("Cash 5000.", ctx)
+    assert "100,000" not in scrub_account_numbers("NAV 100,000.", ctx)
+
+
+def test_langgraph_preserves_position_context_through_to_the_final_state():
+    """리뷰가 제기한 미검증 가정: 실제 그래프의 final_state 가 이 키를 나르는가?
+
+    나르지 않으면 _run_graph 의 스크럽은 `final_state.get("position_context", "")`
+    에서 "" 를 받아 **조용한 무동작**이 된다 -- 예외도 로그도 없이 유출이 계속된다.
+    위의 _run_graph 테스트들은 MagicMock 이 final_state 를 돌려주므로 이 가정을
+    증명하지 못한다. 그래서 진짜 StateGraph 를 컴파일해서 실측한다.
+
+    (position_context 는 리듀서 없는 Annotated[str, "..."] 로 선언돼 있어 langgraph
+    기본 LastValue 채널이 된다. 어떤 노드도 이 키를 반환하지 않으므로 초기값이
+    끝까지 살아남는다 -- 이 테스트가 그 동작을 langgraph 업그레이드에 대해 못박는다.)
+    """
+    from langgraph.graph import END, START, StateGraph
+
+    builder = StateGraph(AgentState)
+    # PM 이 하는 일만 흉내 낸다: 다른 키를 쓰고 position_context 는 건드리지 않는다.
+    builder.add_node("decide", lambda state: {"final_trade_decision": "Rating: Hold"})
+    builder.add_edge(START, "decide")
+    builder.add_edge("decide", END)
+    graph = builder.compile()
+
+    initial = Propagator().create_initial_state("AAPL", "2026-08-19", position_context=_CTX)
+    final_state = graph.invoke(initial)
+
+    assert final_state["position_context"] == _CTX
+    assert final_state["final_trade_decision"] == "Rating: Hold"

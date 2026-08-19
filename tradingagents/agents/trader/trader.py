@@ -8,7 +8,6 @@ from langchain_core.messages import AIMessage
 
 from tradingagents.agents.schemas import TraderProposal, render_trader_proposal
 from tradingagents.agents.utils.agent_utils import (
-    build_position_block,
     get_instrument_context_from_state,
     get_language_instruction,
 )
@@ -26,9 +25,6 @@ def create_trader(llm):
         company_name = state["company_of_interest"]
         instrument_context = get_instrument_context_from_state(state)
         investment_plan = state["investment_plan"]
-        # Decision stage only -- see build_position_block. Empty string when
-        # nothing was injected, so the heading disappears with it.
-        position_block = build_position_block(state)
 
         messages = [
             {
@@ -50,7 +46,6 @@ def create_trader(llm):
                     f"social media sentiment. Use this plan as a foundation for evaluating your next "
                     f"trading decision.\n\nProposed Investment Plan: {investment_plan}\n\n"
                     f"Leverage these insights to make an informed and strategic decision."
-                    f"\n\n{position_block}"
                 ),
             },
         ]
