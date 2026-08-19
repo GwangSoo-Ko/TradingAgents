@@ -199,7 +199,11 @@ class TrancheTrigger(BaseModel):
     )
     price: float | None = Field(
         default=None,
-        description="Trigger price in the quote currency, for 'take_profit' and 'stop'.",
+        description=(
+            "The price an order would be placed at when this condition fires, in the "
+            "quote currency. For 'take_profit' and 'stop'. This is the only field here "
+            "a consumer may trade on."
+        ),
     )
     trail_pct: float | None = Field(
         default=None,
@@ -208,9 +212,12 @@ class TrancheTrigger(BaseModel):
     reference_price: float | None = Field(
         default=None,
         description=(
-            "An indicator value the condition refers to (a moving average, a channel "
-            "boundary). This is NOT a price to trade at -- put execution prices in the "
-            "tranche's price_low/price_high band."
+            "An indicator value the condition watches (a moving average, a channel "
+            "boundary). NEVER place an order at this value -- it records what is being "
+            "watched, not where to trade. The price to act on goes in `price`. Leave "
+            "this null when the level watched and the level traded are the same number: "
+            "do not repeat `price` here, because a consumer that reads this field "
+            "instead would act on the wrong one the moment they differ."
         ),
     )
     reference_label: str | None = Field(
@@ -238,12 +245,20 @@ class ExitTarget(BaseModel):
         description=(
             "'weight' = converge down to a remaining percent of NAV. 'cost_recovery' = "
             "sell enough to take the original capital back out and hold the rest. "
-            "'full' = exit the position entirely."
+            "'full' = exit the position entirely. Match this to the rating: a 'Sell' "
+            "rating means the position goes, so it must be 'full'; 'weight' and "
+            "'cost_recovery' keep something and therefore belong to 'Underweight'. "
+            "A 'Sell' paired with a residual weight is read as a full liquidation "
+            "downstream, so the residual would be sold anyway."
         ),
     )
     remaining_weight_pct: float | None = Field(
         default=None,
-        description="For kind='weight' only: the percent of NAV to keep, e.g. 1.5 for 1.5%.",
+        description=(
+            "For kind='weight' only: the percent of NAV to keep, e.g. 1.5 for 1.5%. "
+            "Leave null for 'cost_recovery' and 'full' -- there is no residual target "
+            "to state."
+        ),
     )
 
     @field_validator("remaining_weight_pct", mode="before")

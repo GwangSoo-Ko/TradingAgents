@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from tradingagents.agents.schemas import (
     ExitTarget,
@@ -68,8 +69,17 @@ def test_portfolio_decision_defaults_keep_backward_compatibility():
 
 
 def test_kill_switch_requires_condition():
+    """조건 없는 킬스위치는 가격 하나만 남아 왜 청산하는지 아무도 모른다."""
+    with pytest.raises(ValidationError):
+        KillSwitch(price=9100.0)
+
     ks = KillSwitch(price=9100.0, condition="200SMA 훼손 시 잔여 전량 청산")
     assert ks.condition
+
+
+def test_kill_switch_may_be_condition_only():
+    """가격 없는 조건(공시·일정)도 킬스위치다 — 가격을 필수로 만들면 그걸 못 담는다."""
+    assert KillSwitch(condition="10월 임시주총 연기 공시 시 전량 청산").price is None
 
 
 def test_render_shows_triggers_under_their_tranche():
@@ -80,7 +90,7 @@ def test_render_shows_triggers_under_their_tranche():
         tranches=[
             Tranche(seq=1, pct=40, price_low=10800, price_high=11000, trigger="immediate"),
             Tranche(
-                seq=2, pct=60, trigger="conditional",
+                seq=2, pct=40, trigger="conditional",
                 triggers=[
                     TrancheTrigger(kind="take_profit", price=11500.0),
                     TrancheTrigger(kind="trailing", trail_pct=8.0),
@@ -89,6 +99,10 @@ def test_render_shows_triggers_under_their_tranche():
                                    condition="종가 기준 2거래일 연속 10EMA 하회"),
                 ],
             ),
+            Tranche(
+                seq=3, pct=20, trigger="conditional",
+                triggers=[TrancheTrigger(kind="event", condition="10월 임시주총")],
+            ),
         ],
     ))
 
@@ -96,14 +110,18 @@ def test_render_shows_triggers_under_their_tranche():
     assert "trailing -8%" in md
     assert "10EMA=14628" in md
     assert "종가 기준 2거래일 연속 10EMA 하회" in md
-    # Each trigger sits under its own tranche, not above the Entry Plan header.
-    assert md.index("- #2 ") < md.index("take_profit @11500")
+    # Each trigger sits under ITS OWN tranche. Asserting only "#2 precedes its own
+    # trigger" is trivially true even if the loop is hoisted out of the tranche
+    # loop and every trigger is dumped after every tranche line -- so anchor on a
+    # LATER tranche's header instead: #2's triggers must come before "- #3 ".
+    assert md.index("- #2 ") < md.index("take_profit @11500") < md.index("- #3 ")
+    assert md.index("- #3 ") < md.index("event 10월 임시주총")
 
 
 def test_render_shows_exit_target_and_kill_switch_after_the_existing_headers():
     """신규 블록은 기존 헤더 뒤에 온다 — 다운스트림은 순서를 전제로 읽는다."""
     md = render_pm_decision(PortfolioDecision(
-        rating="Sell", executive_summary="s", investment_thesis="t",
+        rating="Underweight", executive_summary="s", investment_thesis="t",
         tranches=[Tranche(seq=1, pct=100, trigger="immediate")],
         exit_target=ExitTarget(kind="weight", remaining_weight_pct=1.5),
         kill_switch=KillSwitch(price=9100.0, condition="200SMA 훼손 시 잔여 전량 청산"),
@@ -126,6 +144,22 @@ def test_render_exit_target_omits_the_weight_detail_when_not_a_weight_target():
 
     assert "**Exit Target**: cost_recovery" in md
     assert "%" not in md.split("**Exit Target**")[1]
+
+
+def test_render_never_prints_a_residual_weight_on_a_full_exit():
+    """kind 를 안 보고 값만 보면, 전량 청산 계획이 '1.5% 남긴다'로 렌더된다.
+
+    kind='full' + remaining_weight_pct=1.5 는 구성 가능한 조합이다(스키마가 막지
+    않는다). cost_recovery 케이스만으로는 이 결함이 안 잡힌다 — 거기선 값이 애초에
+    None 이라 `kind == 'weight'` 조건을 지워도 테스트가 초록으로 남는다.
+    """
+    md = render_pm_decision(PortfolioDecision(
+        rating="Sell", executive_summary="s", investment_thesis="t",
+        exit_target=ExitTarget(kind="full", remaining_weight_pct=1.5),
+    ))
+
+    assert "**Exit Target**: full" in md
+    assert "1.5" not in md.split("**Exit Target**")[1]
 
 
 def test_render_omits_the_new_blocks_when_absent():

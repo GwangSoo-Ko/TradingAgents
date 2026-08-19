@@ -15,6 +15,8 @@ from pydantic import ValidationError
 from tradingagents.agents.analysts.sentiment_analyst import create_sentiment_analyst
 from tradingagents.agents.managers.research_manager import create_research_manager
 from tradingagents.agents.schemas import (
+    ExitTarget,
+    KillSwitch,
     PortfolioDecision,
     PortfolioRating,
     ResearchPlan,
@@ -23,6 +25,7 @@ from tradingagents.agents.schemas import (
     TraderAction,
     TraderProposal,
     Tranche,
+    TrancheTrigger,
     render_research_plan,
     render_sentiment_report,
     render_trader_proposal,
@@ -143,6 +146,44 @@ class TestNullishFloatCoercion:
                     price_low="13200", price_high="13400.5")
         assert t.price_low == 13200.0
         assert t.price_high == 13400.5
+
+    def test_trigger_nullish_floats_coerce_to_none(self):
+        # Same failure mode one level down. A sell plan's triggers carry three
+        # optional numbers; "N/A" in any one of them raises, and the raise is
+        # swallowed into a free-text fallback -- the whole plan disappears, not
+        # just the field.
+        for sentinel in ("None", "N/A", "null", "-", "", "TBD"):
+            t = TrancheTrigger(
+                kind="stop",
+                price=sentinel,
+                trail_pct=sentinel,
+                reference_price=sentinel,
+            )
+            assert t.price is None
+            assert t.trail_pct is None
+            assert t.reference_price is None
+
+    def test_trigger_real_numeric_strings_still_parse(self):
+        t = TrancheTrigger(kind="stop", price="10600",
+                           trail_pct="8.0", reference_price="14628.5")
+        assert t.price == 10600.0
+        assert t.trail_pct == 8.0
+        assert t.reference_price == 14628.5
+
+    def test_exit_target_nullish_weight_coerces_to_none(self):
+        # kind='full'/'cost_recovery' have no residual weight, and a model that
+        # writes "N/A" rather than omitting the key must not take the plan down.
+        for sentinel in ("None", "N/A", "null", "-", "", "TBD"):
+            assert ExitTarget(kind="full", remaining_weight_pct=sentinel).remaining_weight_pct is None
+        assert ExitTarget(kind="weight", remaining_weight_pct="1.5").remaining_weight_pct == 1.5
+
+    def test_kill_switch_nullish_price_coerces_to_none(self):
+        # A kill switch can be condition-only ("임시주총 연기 공시 시"), so the
+        # price slot is exactly where a placeholder string lands.
+        for sentinel in ("None", "N/A", "null", "-", "", "TBD"):
+            ks = KillSwitch(price=sentinel, condition="200SMA 훼손")
+            assert ks.price is None
+        assert KillSwitch(price="9100", condition="c").price == 9100.0
 
 
 @pytest.mark.unit

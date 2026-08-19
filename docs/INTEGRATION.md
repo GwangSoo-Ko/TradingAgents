@@ -99,18 +99,71 @@ The **machine-readable trade plan** is available two ways:
 
 - `final_state["portfolio_decision_obj"]` — the typed `PortfolioDecision`
   (rating, `price_target`, `time_horizon`, `total_weight_pct`, `stop_loss`,
-  `tranches[]`), or `None` when the Portfolio Manager's structured call fell
-  back to free text.
+  `tranches[]`, `exit_target`, `kill_switch`), or `None` when the Portfolio
+  Manager's structured call fell back to free text.
 - `main.py` prints one line `TRADE_PLAN_JSON: {...}` right after the decision
   when that object exists (`executive_summary` / `investment_thesis` excluded —
   they are already in the report). **The line is absent when there is no
   structured plan**; "no plan" is a valid outcome and a consumer must not
   synthesise one by parsing the prose.
 
-`tranches[].trigger` is one of `immediate` / `price` / `event`. The tranches are
-a phased *execution* plan whose direction follows `rating`: on a Buy/Overweight
-they scale in, on an Underweight/Sell they scale out. Read `rating` before
-turning an `immediate` tranche into an order.
+#### The plan contract
+
+The tranches are a phased *execution* plan whose direction follows `rating`: on
+a Buy/Overweight they scale in, on an Underweight/Sell they scale out. **Read
+`rating` before turning an `immediate` tranche into an order.**
+
+**`tranches[]`** — `pct` partitions the move from the *current* position to the
+target and sums to **100** across the list (on a Buy the move is the whole
+target; on a reduction it is only the amount being reduced). `trigger` is
+`immediate` or `conditional`. **Only `immediate` tranches are executable** —
+`conditional` ones are for display, and nothing in this framework watches them.
+
+> ⚠️ **Breaking, 2026-08:** `trigger` was `immediate` / `price` / `event`. The
+> *kind* of condition now lives in `triggers[].kind`; `price` and `event` are
+> rejected by validation. A consumer comparing `trigger == "immediate"` is
+> unaffected.
+
+`price_low` / `price_high` are the tranche's execution band. On a `conditional`
+tranche the band is frequently just the span between the extreme triggers (a
+real run produced `10321~11600`, i.e. stop-to-take-profit), so **do not read it
+as an order band unless `trigger == "immediate"`.**
+
+**`tranches[].triggers[]`** — the conditions that fire a `conditional` tranche;
+empty on `immediate`. More than one means **whichever comes first wins (OCO)**.
+OCO legs are never split across tranches — splitting would double-count the same
+quantity while still summing to 100.
+
+| field | meaning |
+|---|---|
+| `kind` | `take_profit` / `stop` / `trailing` / `event` |
+| `price` | **the only tradeable number in this object** — where an order would be placed |
+| `trail_pct` | `trailing` only: percent drop from the running high (`8.0` = −8%) |
+| `reference_price` | the indicator level the condition watches. **Never place an order at this value.** |
+| `reference_label` | what `reference_price` is (`10EMA`, `200SMA`, `range low`, …) |
+| `condition` | human-readable text, including technical criteria |
+
+**`exit_target`** — `{kind, remaining_weight_pct}` or null. What a *reduction*
+plan converges to: the sell-side counterpart of `total_weight_pct`. `kind` is
+`weight` (keep `remaining_weight_pct` % of NAV), `cost_recovery` (sell enough to
+take the original capital back out, hold the rest), or `full` (exit entirely).
+`Sell` ⇒ `full`; `weight` / `cost_recovery` belong to `Underweight`.
+
+> ⚠️ **`total_weight_pct` is buy-side only** as of 2026-08. It used to double as
+> "the remaining exposure to converge down to" on an Underweight; it is now null
+> on reductions. A consumer that still reads it for the reduction target gets
+> **no target**, which typically degrades to "produce no orders" with a
+> plausible-looking reason rather than an error. Read `exit_target` instead.
+
+**`kill_switch`** — `{price, condition}` or null. A full-exit condition watched
+independently of the tranche schedule; it is not part of the `pct` partition.
+`price` may be null, because the condition can be an event rather than a level
+(e.g. a delayed disclosure).
+
+Every numeric field above is optional and may be null; a model that cannot
+justify a number omits it. Treat each one as something that could become an
+order — see `TRADINGAGENTS_POSITION_CONTEXT` in §4 for the account snapshot that
+lets the Portfolio Manager size a reduction against what is actually held.
 
 ### Two consumption modes for a host app (e.g. alpha-pulse)
 
@@ -215,6 +268,13 @@ function**: it reads env, writes to disk, and calls the network.
 - **Vertex (optional `[vertex]`):** `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`
   (default `global`), ADC via `GOOGLE_APPLICATION_CREDENTIALS` — **no vendor key**.
 - **Config overlay:** all `TRADINGAGENTS_*` (see §3).
+- **`TRADINGAGENTS_POSITION_CONTEXT`** — *reserved; no code reads it yet.* A
+  free-text snapshot of the caller's existing position in the ticker (held
+  quantity, average cost, current weight of NAV, and NAV itself), to be injected
+  into the Portfolio Manager's prompt. Without it the PM writes reduction plans
+  blind: it does not know whether anything is held, so `exit_target` and the
+  tranche `pct` split are reasoned from the prose alone. Unset means "no position
+  information available" and must stay valid — the framework runs standalone.
 
 ### Filesystem — the `~/.tradingagents/` home tree
 Rooted at `~/.tradingagents/`; override the base with **`TRADINGAGENTS_CACHE_DIR`**
