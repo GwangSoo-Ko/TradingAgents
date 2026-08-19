@@ -268,13 +268,43 @@ function**: it reads env, writes to disk, and calls the network.
 - **Vertex (optional `[vertex]`):** `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`
   (default `global`), ADC via `GOOGLE_APPLICATION_CREDENTIALS` — **no vendor key**.
 - **Config overlay:** all `TRADINGAGENTS_*` (see §3).
-- **`TRADINGAGENTS_POSITION_CONTEXT`** — *reserved; no code reads it yet.* A
-  free-text snapshot of the caller's existing position in the ticker (held
-  quantity, average cost, current weight of NAV, and NAV itself), to be injected
-  into the Portfolio Manager's prompt. Without it the PM writes reduction plans
-  blind: it does not know whether anything is held, so `exit_target` and the
-  tranche `pct` split are reasoned from the prose alone. Unset means "no position
-  information available" and must stay valid — the framework runs standalone.
+- **`TRADINGAGENTS_POSITION_CONTEXT`** — a one-line JSON account/position
+  snapshot, read once per run by `graph/trading_graph.py:_read_position_context`
+  and carried on the `position_context` state channel declared in
+  `agents/utils/agent_states.py`. ⚠️ That declaration is **load-bearing** —
+  langgraph silently drops any key a node returns that the state schema doesn't
+  list, so removing it makes the injection vanish with no exception and no
+  warning; plan quality just quietly degrades. Invalid JSON is a warning to
+  stderr, not a crash — the run degrades to "no position information available",
+  same as unset.
+
+  **Only the Portfolio Manager reads it**, via
+  `agents/utils/agent_utils.py:build_position_block` — it is the last node, so
+  nothing it writes can reach another agent's prompt; the isolation is
+  structural, not just a prompt instruction. The Trader deliberately does
+  **not** read it even though it also sizes a transaction: its `TraderProposal`
+  renders into `trader_investment_plan`, which the aggressive/conservative/
+  neutral risk debators all embed verbatim, so injecting there would leak the
+  account into the three modules whose debate is supposed to run on unbiased
+  ground. Analysts and researchers never see it either — knowing a position is
+  held biases toward the disposition effect.
+
+  Expected shape (all keys optional; a missing key just narrows what the PM can
+  reason about):
+  ```json
+  {"held_qty":2697,"avg_price":10900,"current_price":10950,
+   "unrealized_pnl_pct":0.46,"current_weight_pct":5.90,
+   "cash":456535870,"total_nav":500769000,"currency":"KRW"}
+  ```
+  Without it the PM writes reduction plans blind: it does not know whether
+  anything is held, so `exit_target` and the tranche `pct` split are reasoned
+  from the prose alone. Before the Portfolio Manager's rendered output is
+  archived to the decision log, `graph/trading_graph.py:scrub_account_numbers`
+  strips the raw `cash`/`total_nav`/`held_qty`/`avg_price` figures back out —
+  the prompt already asks the model not to quote them, but the PM's own
+  executive-summary instructions pull toward citing position sizing, so the
+  instruction alone isn't reliable enough for an archive that `get_past_context`
+  replays into later runs.
 
 ### Filesystem — the `~/.tradingagents/` home tree
 Rooted at `~/.tradingagents/`; override the base with **`TRADINGAGENTS_CACHE_DIR`**
