@@ -236,7 +236,7 @@ def get_global_news_yfinance(
             # Extract uniformly (flat + nested) and apply the same look-ahead-safe
             # window filter, so flat articles can't leak future news (#1007).
             data = _extract_article_data(article)
-            if not _in_news_window(data["pub_date"], start_dt, curr_dt):
+            if not in_window(data["pub_date"], start_dt, curr_dt):
                 continue
             news_str += f"### {data['title']} (source: {data['publisher']})\n"
             if data["summary"]:

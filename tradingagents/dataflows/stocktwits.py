@@ -60,6 +60,29 @@ def _within_window(messages, start_date, end_date):
     return kept
 
 
+def _within_window(messages, start_date, end_date):
+    """Keep only messages published in [start_date, end_date] (look-ahead safe).
+
+    No window (both None) leaves the list untouched for live callers. A message
+    whose ``created_at`` (ISO 8601) is unparseable is dropped in a historical
+    window, since we can't prove it isn't from after the as-of date (#1220).
+    """
+    if not (start_date and end_date):
+        return messages
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    kept = []
+    for m in messages:
+        created = None
+        raw = m.get("created_at")
+        if raw:
+            with contextlib.suppress(ValueError, TypeError):
+                created = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if in_window(created, start_dt, end_dt):
+            kept.append(m)
+    return kept
+
+
 def _stocktwits_symbol(ticker: str) -> str:
     """Map a crypto pair to StockTwits' ``<BASE>.X`` convention.
 
