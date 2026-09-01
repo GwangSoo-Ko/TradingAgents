@@ -111,14 +111,26 @@ def create_sentiment_analyst(llm):
         # returns a string (no exceptions surface from here), so the LLM
         # always sees something — either real data or a clear placeholder.
         news_block = get_news.func(ticker, start_date, end_date)
-        stocktwits_block = fetch_stocktwits_messages(ticker, limit=30)
+        # Pass the analysis window so a historical run trims social posts to it
+        # instead of leaking today's chatter into a backtest (#1220).
+        stocktwits_block = fetch_stocktwits_messages(
+            ticker, limit=30, start_date=start_date, end_date=end_date
+        )
         # Reddit users typically spell out the company name rather than the
         # ticker (esp. for short, non-obvious tickers like NTRA/PSNL/BWXT),
         # so we OR the ticker with the yfinance-resolved name to widen recall.
-        reddit_block = fetch_reddit_posts(ticker, company_name=_resolve_company_name(ticker))
+        reddit_block = fetch_reddit_posts(
+            ticker,
+            company_name=_resolve_company_name(ticker),
+            start_date=start_date,
+            end_date=end_date,
+        )
 
         # Korean retail sentiment from Naver 종목토론방 — opt-in (off by default),
         # KR tickers only. StockTwits/Reddit structurally miss Korean retail.
+        # ⚠️ 이 소스만 창 트리밍이 없다 — 네이버 응답에 신뢰할 만한 타임스탬프가
+        # 없어 #1220 의 look-ahead 가드를 적용할 수 없다. 과거 날짜 분석에서는
+        # KR 종목토론방만 '현재' 잡담을 볼 수 있다.
         kr_discussion_block = _maybe_fetch_kr_discussion(ticker)
 
         system_message = _build_system_message(
