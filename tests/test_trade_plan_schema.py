@@ -313,3 +313,57 @@ def test_main_omits_trade_plan_json_when_structured_failed(monkeypatch, tmp_path
     m.main(["005830.KS", "2026-08-18"])
 
     assert "TRADE_PLAN_JSON:" not in capsys.readouterr().out
+
+
+def test_portfolio_decision_carries_revision():
+    """revision 은 TRADE_PLAN_JSON 에 실려야 소비자(AlphaPulse)가 검증할 수 있다."""
+    from tradingagents.agents.schemas import PlanRevision, PortfolioDecision
+
+    d = PortfolioDecision(
+        rating="Underweight",
+        executive_summary="reduce",
+        investment_thesis="thesis",
+        revision=PlanRevision(kind="thesis_error", note="8월 랠리의 근거였던 업종 후광이 소멸"),
+    )
+
+    payload = json.loads(d.model_dump_json(exclude={"executive_summary", "investment_thesis"}))
+
+    assert payload["revision"] == {
+        "kind": "thesis_error",
+        "note": "8월 랠리의 근거였던 업종 후광이 소멸",
+    }
+
+
+def test_revision_defaults_to_none_for_fresh_entries():
+    """신규 진입에는 화해할 논지가 없다 — 기본값이 없으면 모든 매수 계획이 깨진다."""
+    from tradingagents.agents.schemas import PortfolioDecision
+
+    d = PortfolioDecision(rating="Overweight", executive_summary="buy", investment_thesis="t")
+
+    assert d.revision is None
+
+
+def test_revision_rejects_unknown_kind():
+    """분류가 자유 문자열이면 집계가 불가능해진다 — Literal 이 그것을 막는다."""
+    import pydantic
+
+    from tradingagents.agents.schemas import PortfolioDecision
+
+    with pytest.raises(pydantic.ValidationError):
+        PortfolioDecision(
+            rating="Sell",
+            executive_summary="s",
+            investment_thesis="t",
+            revision={"kind": "vibes", "note": "n"},
+        )
+
+
+def test_render_pm_decision_includes_revision():
+    """번복 사유는 저장되는 리포트 마크다운에도 남아야 사람이 사후에 읽는다."""
+    from tradingagents.agents.schemas import PlanRevision, render_pm_decision
+
+    md = render_pm_decision(
+        _decision(rating="Underweight", revision=PlanRevision(kind="tactical", note="비중만 축소"))
+    )
+
+    assert "**Revision** (tactical): 비중만 축소" in md

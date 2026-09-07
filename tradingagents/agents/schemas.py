@@ -338,6 +338,34 @@ class Tranche(BaseModel):
         return [] if v is None else v
 
 
+class PlanRevision(BaseModel):
+    """Why today's rating departs from the thesis that established the position.
+
+    The consumer (AlphaPulse) requires this object whenever the prompt carried a
+    'Founding Thesis' block and today's rating leaves the buy side. It cannot be
+    enforced here: this process does not know what the founding thesis was, and a
+    wrongly-required field makes the structured call fall back to free text --
+    which loses the whole plan.
+    """
+
+    kind: Literal["new_information", "price_action", "thesis_error", "tactical"] = Field(
+        description=(
+            "Why this rating departs from the founding thesis shown in the prompt. "
+            "Exactly one of: 'new_information' -- earnings, filings or news confirmed "
+            "since entry; 'price_action' -- price or technical conditions changed "
+            "(kill switch approached, support broken); 'thesis_error' -- the founding "
+            "thesis itself is judged wrong; 'tactical' -- the thesis still holds and "
+            "only the position size changes."
+        ),
+    )
+    note: str = Field(
+        description=(
+            "One to three sentences naming what specifically changed since the founding "
+            "thesis. Cite the evidence, not the conclusion."
+        ),
+    )
+
+
 class PortfolioDecision(BaseModel):
     """Structured output produced by the Portfolio Manager.
 
@@ -407,6 +435,14 @@ class PortfolioDecision(BaseModel):
             "Its price must be below the entry band -- this is a long-only system."
         ),
     )
+    revision: PlanRevision | None = Field(
+        default=None,
+        description=(
+            "Fill this when the prompt carries a 'Founding Thesis' block AND this "
+            "rating leaves the buy side (Buy/Overweight) that established the position. "
+            "Omit it for fresh entries and when the rating stays on the buy side."
+        ),
+    )
 
     @field_validator("price_target", "total_weight_pct", "stop_loss", mode="before")
     @classmethod
@@ -437,6 +473,8 @@ def render_pm_decision(decision: PortfolioDecision) -> str:
         parts.extend(["", f"**Position Size**: {decision.total_weight_pct}%"])
     if decision.stop_loss is not None:
         parts.extend(["", f"**Stop Loss**: {decision.stop_loss}"])
+    if decision.revision is not None:
+        parts.extend(["", f"**Revision** ({decision.revision.kind}): {decision.revision.note}"])
     if decision.tranches:
         parts.extend(["", "**Entry Plan**:"])
         for t in decision.tranches:
