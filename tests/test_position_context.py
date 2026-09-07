@@ -433,3 +433,74 @@ def test_langgraph_preserves_position_context_through_to_the_final_state():
 
     assert final_state["position_context"] == _CTX
     assert final_state["final_trade_decision"] == "Rating: Hold"
+
+
+_FOUNDING = {
+    "held_qty": 366, "avg_price": 8631.0, "current_price": 8250.0,
+    "unrealized_pnl_pct": -4.41, "current_weight_pct": 3.1,
+    "cash": 1000.0, "total_nav": 50000.0, "currency": "KRW",
+    "founding_thesis": {
+        "as_of": "20260903", "rating": "Overweight", "price_target": 10500.0,
+        "time_horizon": "6-12 months", "kill_switch_price": 6300.0,
+        "entry_price": 8718.0, "entry_date": "20260904",
+        "trading_days_held": 1, "last_night_rating": "Underweight",
+    },
+    "founding_thesis_absent_reason": "",
+}
+
+
+def test_position_block_renders_founding_thesis():
+    """PM 이 '그 포지션을 만든 계획'을 봐야 번복이 독립 추첨이 아니게 된다.
+
+    바레 서브스트링(``"10500" in block``)은 값을 슬롯에 묶지 못한다 --
+    price_target 과 entry_price 가 서로 뒤바뀌어 렌더돼도 두 숫자 다 어딘가에는
+    나타나므로 통과해 버린다. 그래서 각 값을 그 값이 속한 레이블과 함께 한
+    문자열로 묶어 단언한다: as_of+rating, entry_price+entry_date 처럼 뒤바뀔 수
+    있는 쌍은 반드시 같이 박아, 뒤바뀜이 생기면 그 문자열 자체가 사라지게 한다.
+    """
+    block = build_position_block({"position_context": json.dumps(_FOUNDING)})
+
+    assert "Founding Thesis" in block
+    assert "revision" in block          # 무엇을 채워야 하는지 지시
+    assert "On 20260903 you rated this **Overweight**" in block   # 작성일 + 진입 등급
+    assert "price target 10500.0 KRW" in block                    # 목표가
+    assert "horizon 6-12 months" in block                         # 호라이즌
+    assert "Entered at 8718.0 KRW on 20260904" in block           # 진입가 + 진입일
+    assert "That plan's own kill switch: 6300.0 KRW" in block     # kill switch
+    assert "Most recent prior rating: Underweight" in block       # 어젯밤 등급
+
+
+def test_position_block_states_trading_days_held_even_when_zero():
+    """0 은 '오늘 사서 오늘 밤 뒤집는다' 다 — 가장 극단적인 사례가 사라지면 안 된다."""
+    ctx = json.loads(json.dumps(_FOUNDING))
+    ctx["founding_thesis"]["trading_days_held"] = 0
+
+    block = build_position_block({"position_context": json.dumps(ctx)})
+
+    assert "Trading days held since entry: 0" in block
+
+
+def test_position_block_distinguishes_lookup_failure_from_no_plan():
+    """조회 실패가 '계획 없음'으로 위장되면 인프라 장애가 수동 매수처럼 보인다."""
+    failed = json.loads(json.dumps(_FOUNDING))
+    failed["founding_thesis"] = None
+    failed["founding_thesis_absent_reason"] = "lookup_failed"
+
+    absent = json.loads(json.dumps(_FOUNDING))
+    absent["founding_thesis"] = None
+    absent["founding_thesis_absent_reason"] = "no_source_plan"
+
+    b_failed = build_position_block({"position_context": json.dumps(failed)})
+    b_absent = build_position_block({"position_context": json.dumps(absent)})
+
+    assert "could not be retrieved" in b_failed
+    assert "not opened from a plan" in b_absent
+    assert b_failed != b_absent
+
+
+def test_position_block_without_founding_keys_is_unchanged():
+    """옛 페이로드(키 없음)로도 죽지 않아야 배포 순서가 어긋나도 안전하다."""
+    block = build_position_block({"position_context": _CTX})
+
+    assert "Founding Thesis" not in block
+    assert block  # 기존 렌더는 그대로

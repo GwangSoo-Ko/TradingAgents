@@ -279,6 +279,29 @@ def build_position_block(state: Mapping[str, Any]) -> str:
         lines.append(f"- Cash available: {ctx['cash']} {cur}")
     if ctx.get("total_nav") is not None:
         lines.append(f"- Total account NAV: {ctx['total_nav']} {cur}")
+    ft = ctx.get("founding_thesis")
+    if isinstance(ft, dict):
+        lines.append("")
+        lines.append("**Founding Thesis** -- the plan this position was opened on")
+        lines.append(
+            f"- On {ft.get('as_of')} you rated this **{ft.get('rating')}**, "
+            f"price target {ft.get('price_target')} {cur}, horizon {ft.get('time_horizon')}."
+        )
+        lines.append(f"- Entered at {ft.get('entry_price')} {cur} on {ft.get('entry_date')}.")
+        lines.append(f"- Trading days held since entry: {ft.get('trading_days_held')}.")
+        if ft.get("kill_switch_price") is not None:
+            lines.append(f"- That plan's own kill switch: {ft['kill_switch_price']} {cur}.")
+        if ft.get("last_night_rating"):
+            lines.append(f"- Most recent prior rating: {ft['last_night_rating']}.")
+        lines.append(
+            "If today's rating leaves the buy side (Buy/Overweight), you MUST fill the "
+            "`revision` field: pick new_information / price_action / thesis_error / "
+            "tactical and name what specifically changed since that plan."
+        )
+    elif ctx.get("founding_thesis_absent_reason") == "lookup_failed":
+        lines.append("- Founding thesis: **could not be retrieved** (infrastructure issue, not absence).")
+    elif ctx.get("founding_thesis_absent_reason") == "no_source_plan":
+        lines.append("- Founding thesis: none on record -- this position was not opened from a plan.")
     lines.append(
         "Use these figures to size and direct the decision. **Do not quote the raw "
         "account numbers in your written output** -- refer to sizing in percentages "
