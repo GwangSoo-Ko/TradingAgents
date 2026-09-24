@@ -210,3 +210,29 @@ def test_a_decision_prompt_states_the_shape_of_its_answer(module, factory, must_
     assert "## Output" in prompt, "no output-format section in the prompt"
     section = prompt.split("## Output", 1)[1]
     assert f"**{must_name}**" in section, section[:300]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("quoted", [
+    "Street consensus rating: Buy (28 of 35 analysts).",
+    "Moody's affirmed the credit rating: Buy-side demand for the bonds stayed firm.",
+    "Operating margin: Sell-side estimates sit below guidance.",
+])
+def test_a_rating_the_text_quotes_does_not_replace_the_decision(quoted):
+    """A free-text decision opens with its own rating line; a rating it quotes
+    as evidence, or a word merely ending in 'rating', is not the call."""
+    text = f"**Rating**: Hold\n\n**Investment Thesis**: {quoted} We wait for margins."
+    assert extract_rating(text) == "Hold"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("quoted", [
+    "- Rating: Buy (Goldman Sachs, 12m target 180)",
+    "| Rating: Buy | Morgan Stanley |",
+    "> Rating: Buy, per the sell-side note",
+    "Street consensus rating: Buy",
+    "Consensus rating: Buy (28 of 35 analysts)",
+])
+def test_a_quoted_rating_in_a_list_table_or_quote_is_not_the_decision(quoted):
+    text = f"Our rating: Hold\n\nWhat others say:\n{quoted}\n\nWe wait for margins."
+    assert extract_rating(text) == "Hold"
