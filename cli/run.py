@@ -28,7 +28,7 @@ from cli.stats_handler import StatsCallbackHandler
 from tradingagents.agents.context import instrument_display_label
 from tradingagents.agents.rating import is_review
 from tradingagents.dataflows.symbols import safe_ticker_component
-from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.default_config import DEFAULT_CONFIG, news_region_for_ticker
 from tradingagents.graph.analyst_execution import (
     build_analyst_execution_plan,
 )
@@ -131,6 +131,12 @@ def run_analysis(checkpoint: bool | None = None, portfolio=None):
             "fundamental_data": "wisereport,yfinance",
         }
         config["enable_kr_discussion_sentiment"] = True
+
+    # Region-aware macro news, as propagate() gives its runs (Bank of Korea /
+    # KOSPI queries for .KS/.KQ; None = US/default). The CLI streams the graph
+    # itself, so its data tools read the config the graph publishes when it is
+    # built below.
+    config["news_region"] = news_region_for_ticker(selections["ticker"])
 
     stats_handler = StatsCallbackHandler()
 

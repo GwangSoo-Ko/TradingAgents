@@ -357,17 +357,17 @@ class TradingAgentsGraph:
         """
         trade_date = _validate_trade_date(trade_date)
 
-        # Make macro/global news region-aware: stash this ticker's region so
-        # get_global_news_* selects region-appropriate queries (e.g. Bank of
-        # Korea / KOSPI for .KS/.KQ instead of only Fed / S&P). None = US/default.
-        # This must precede run_config() below: it snapshots self.config for the
-        # run, so a region set later never reaches the data tools.
-        self.config["news_region"] = news_region_for_ticker(company_name)
-        set_config(self.config)
+        # Make macro/global news region-aware: the run's config carries this
+        # ticker's region so get_global_news_* selects region-appropriate queries
+        # (e.g. Bank of Korea / KOSPI for .KS/.KQ instead of only Fed / S&P).
+        # None = US/default. It lives in the run's scope only: the caller's config
+        # dict (DEFAULT_CONFIG itself when none was given) and the process-wide
+        # config stay untouched, so no other graph or later run inherits it.
+        run_cfg = {**self.config, "news_region": news_region_for_ticker(company_name)}
 
         # Pending decisions are settled in create_run_state() (via _run_graph),
         # inside the run's config scope.
-        with run_config(self.config), \
+        with run_config(run_cfg), \
                 self.checkpoint_scope(company_name, trade_date, asset_type, portfolio) as thread_id_value:
             return self._run_graph(
                 company_name, trade_date, asset_type=asset_type,
