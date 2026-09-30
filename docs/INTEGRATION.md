@@ -45,7 +45,7 @@ print(decision)                         # "Buy" / "Overweight" / "Hold" / "Under
 |--------|-----------|-------|
 | `TradingAgentsGraph` | `(selected_analysts=("market","social","news","fundamentals"), debug=False, config: dict\|None=None, callbacks: list\|None=None)` | Ctor **has side-effects**: `set_config(config)`, `makedirs(data_cache_dir, results_dir)`, builds every node's LLM (tier defaults + `role_models`), opens `TradingMemoryLog`. |
 | `.propagate` | `(company_name, trade_date, asset_type="stock", portfolio=None) -> (final_state: dict, signal: str)` | The one call you need. `trade_date` must be `YYYY-MM-DD` and not in the future, else `ValueError` before any model call. Runs inside `run_config(self.config)` (§3). `final_state` is the full `AgentState` dict (all reports + `final_trade_decision` + `portfolio_decision_obj`); `signal` is the 5-tier rating or `"REVIEW"` when none is readable (guard with `tradingagents.agents.rating.is_review`). |
-| `.create_run_state` | `(company_name, trade_date, asset_type="stock", portfolio=None) -> dict` | Settles the ticker's pending decisions, then builds the initial state (past context, instrument identity, `portfolio_context`, `position_context`). `propagate()` and the CLI start here. |
+| `.create_run_state` | `(company_name, trade_date, asset_type="stock", portfolio=None) -> dict` | Settles the ticker's pending decisions, then builds the initial state (past context, instrument identity, `portfolio_context`, `position_context` — the latter from `TRADINGAGENTS_POSITION_CONTEXT` when `position_context_from_env` is on, §4). `propagate()` and the CLI start here. |
 | `.record_decision` | `(company_name, trade_date, final_state)` | Appends the run's `pending` decision-log entry, account figures scrubbed (§4). |
 | `.settle_pending` | `(company_name)` | Settles pending entries whose holding window has traded (Reflector LLM call per entry). |
 | `.save_reports` | `(final_state, ticker, save_path=None) -> Path` | Writes the per-section + consolidated markdown tree under `results_dir` (default header). Optional. |
@@ -65,8 +65,8 @@ see §4.
 
 `main.py` is a **runnable, arg-driven entry**: `python main.py TICKER [DATE]` —
 `TICKER` is required (argparse errors if missing), `DATE` is optional
-(`YYYY-MM-DD`, validated; Python 3.11+ also accepts `YYYYMMDD`) and **defaults to
-today** (process-local date, so set `TZ`). A future date fails the run (rc 1)
+(`YYYY-MM-DD` or `YYYYMMDD`, validated and normalized to `YYYY-MM-DD` on every
+supported Python) and **defaults to today** (process-local date, so set `TZ`). A future date fails the run (rc 1)
 before any model call. It runs a full analysis, prints the decision, then writes
 the report tree and prints its path:
 
@@ -266,12 +266,16 @@ Two layers, one source of truth:
    by `_coerce`; a bad int/bool raises at import). This is the **programmatic
    path** (`main.py` starts from `DEFAULT_CONFIG.copy()`).
 2. **`tradingagents/dataflows/config.py`** — what every agent/dataflow reads via
-   `get_config()`. `propagate()` wraps its run in `run_config(self.config)`, a
-   `ContextVar` scope that LangGraph carries into tool calls, so the data tools read
-   that graph's config even when several graphs share a process. Outside such a
-   scope `get_config()` returns a **mutable process-global copy**, which
-   `TradingAgentsGraph.__init__` updates via `set_config(config)` and the CLI's
-   stream path reads; there the last `set_config` wins.
+   `get_config()`. `propagate()` wraps its run in `run_config(...)` — the graph's
+   config plus the run's `news_region` (the ticker's macro-news region, e.g. `KR`
+   for `.KS`/`.KQ`) — a `ContextVar` scope that LangGraph carries into tool calls,
+   so the data tools read that graph's config even when several graphs share a
+   process. It never writes into the config dict you passed (nor `DEFAULT_CONFIG`)
+   or the process-global copy. Outside such a scope `get_config()` returns a
+   **mutable process-global copy**, which `TradingAgentsGraph.__init__` updates via
+   `set_config(config)` and the CLI's stream path reads (the CLI puts the ticker's
+   `news_region` into its config before building the graph); there the last
+   `set_config` wins.
 
 > **`.env` ordering:** `tradingagents/__init__.py` loads `.env` (python-dotenv)
 > so that `default_config`'s env overlay sees it. If you drop that `__init__`,
@@ -286,7 +290,7 @@ Config-key groups an embedder cares about (full list in `default_config.py`):
 | **Data routing** | `data_vendors` (category default), `tool_vendors` (per-tool override), `enable_alpha_vantage_price_crosscheck`, news/global-news knobs |
 | **Persistence** | `data_cache_dir`, `results_dir`, `memory_log_path`, `memory_log_max_entries`, `checkpoint_enabled` |
 | **Settlement** | `holding_period_days`, `benchmark_ticker`, `benchmark_map` (suffix → index, e.g. `.KS` → `^KS11`, `.KQ` → `^KQ11`, default `SPY`) |
-| **Behavior** | `output_language`, `enable_kr_discussion_sentiment`, `portfolio_notice_when_absent` |
+| **Behavior** | `output_language`, `enable_kr_discussion_sentiment`, `portfolio_notice_when_absent`, `position_context_from_env` |
 
 Every key has a `TRADINGAGENTS_*` env override (see `_ENV_OVERRIDES`), e.g.
 `TRADINGAGENTS_LLM_PROVIDER`, `TRADINGAGENTS_DEEP_THINK_LLM`,
@@ -319,9 +323,13 @@ function**: it reads env, writes to disk, and calls the network.
   returns that the state schema doesn't list, so removing it makes the injection
   vanish with no exception and no warning; plan quality just quietly degrades.
   Invalid JSON is a warning to stderr, not a crash — the run degrades to "no
-  position information available", same as unset. The CLI and `backtest` build
-  their state through `create_run_state()` as well, so the variable reaches them
-  too; unset it for those runs.
+  position information available", same as unset. The read is gated by the
+  config key `position_context_from_env` (default `True`; `main.py` pins it
+  `True`): the interactive CLI and `backtest` build their state through
+  `create_run_state()` as well but switch it off, so a variable left in the
+  environment or a `.env` never sizes an interactive run, or a past backtest cell,
+  against today's account. Those entry points take a caller book through
+  `--portfolio` instead.
 
   **Only the Portfolio Manager reads it**, via
   `agents/context.py:build_position_block` — it is the last node, so
@@ -474,7 +482,10 @@ vendor just the providers you use.
 - **Public API:** `router.route_to_vendor`/`get_vendor`/`get_category_for_method`,
   `vendors.yahoo.snapshot.build_verified_market_snapshot`,
   `config.set_config`/`get_config`/`run_config`/`initialize_config`,
-  error types in `errors.py` (`VendorError`/`NoMarketDataError`/`VendorRateLimitError`…),
+  error types in `errors.py` (`VendorError`/`NoMarketDataError`/`VendorRateLimitError`…;
+  the KR vendors raise the `NoMarketDataError` subclass `VendorOutOfScopeError` for a
+  non-KR ticker, which the router passes over so the covering vendor's verdict —
+  e.g. Yahoo's `DATA_UNAVAILABLE` outage — reaches the agent),
   `symbols.normalize_symbol`/`crypto_base`/`safe_ticker_component`,
   `kr_utils.is_kr_ticker`/`to_krx_code`, `vendors.yahoo.ohlcv.load_ohlcv`/`yf_retry`,
   `vendors.reddit.fetch_reddit_posts`/`vendors.stocktwits.fetch_stocktwits_messages`,

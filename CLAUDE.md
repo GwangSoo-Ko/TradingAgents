@@ -135,7 +135,9 @@ The multi-model preset's Grok role also uses `xai/grok-4.3`. The CLI flow lives 
 ### Account context (alpha-pulse)
 
 Two separate channels. `position_context` is the alpha-pulse account snapshot
-(env `TRADINGAGENTS_POSITION_CONTEXT` JSON, read in `create_run_state`); **only the
+(env `TRADINGAGENTS_POSITION_CONTEXT` JSON, read in `create_run_state` when
+`position_context_from_env` is on — `main.py` pins it on, the interactive CLI and
+`backtest` switch it off); **only the
 Portfolio Manager reads it** (`agents/context.py:build_position_block`, Founding
 Thesis included), and `record_decision()` scrubs its figures from the archived
 memory-log copy (`scrub_account_numbers`). `portfolio_context` is upstream's caller
@@ -150,7 +152,7 @@ Tools route to vendors through `dataflows/router.py:route_to_vendor` and two-lev
 - `data_vendors` — category default (`core_stock_apis`, `technical_indicators`, `fundamental_data`, `news_data`, `macro_data`, `prediction_markets`)
 - `tool_vendors` — per-tool override
 
-Vendors live in `dataflows/vendors/` (`yahoo/`, `alpha_vantage/`, `sec_edgar`, `fred`, `polymarket`, `reddit`, `stocktwits`); the fork's KR vendors (`naver_news`, `opendart_fundamentals`, `wisereport`) sit at `dataflows/` top level, are opt-in chain members (`main.py` uses `naver,yfinance` news and `wisereport,yfinance` fundamentals) and raise `NoMarketDataError` for non-KR tickers so the chain falls through. `naver_discussion` (종목토론방) feeds the sentiment analyst when `enable_kr_discussion_sentiment` is on. The analyst tools are in `agents/tools.py`.
+Vendors live in `dataflows/vendors/` (`yahoo/`, `alpha_vantage/`, `sec_edgar`, `fred`, `polymarket`, `reddit`, `stocktwits`); the fork's KR vendors (`naver_news`, `opendart_fundamentals`, `wisereport`) sit at `dataflows/` top level, are opt-in chain members (`main.py` uses `naver,yfinance` news and `wisereport,yfinance` fundamentals) and raise `VendorOutOfScopeError` (a `NoMarketDataError`) for non-KR tickers, which the router passes over so the covering vendor's verdict (e.g. Yahoo's `DATA_UNAVAILABLE`) stands. `safe_get(..., secret=)` masks OpenDART's query-string key in logs and errors. `naver_discussion` (종목토론방) feeds the sentiment analyst when `enable_kr_discussion_sentiment` is on. The analyst tools are in `agents/tools.py`.
 
 **Latest-close cross-check (verified snapshot).** `dataflows/vendors/yahoo/snapshot.py:build_verified_market_snapshot` (the `get_verified_market_snapshot` tool) cross-checks the primary feed's latest close against Alpha Vantage (`dataflows/vendors/alpha_vantage/stock.py:get_latest_close_on_or_before`, `TIME_SERIES_DAILY` compact, filtered `<= curr_date` so it stays look-ahead-safe). When Alpha Vantage has a more recent close than yfinance — the common case where yfinance lags the latest session (returns a NaN/missing last close) — the snapshot flags the primary feed as STALE and surfaces the newer close. Best-effort: gated by `enable_alpha_vantage_price_crosscheck` (default True; env `TRADINGAGENTS_AV_PRICE_CROSSCHECK`), needs `ALPHA_VANTAGE_API_KEY`, and returns nothing (no behavior change) without a key or on any error. yfinance stays the primary vendor — this only adds a one-call verification, not a vendor switch.
 

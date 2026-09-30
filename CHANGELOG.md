@@ -17,6 +17,14 @@ Fork additions (not yet in an upstream release).
   provided" whenever the caller passes no portfolio. `main.py` sets it `False`:
   its account context reaches the Portfolio Manager only, through
   `TRADINGAGENTS_POSITION_CONTEXT`, so no prompt gains the notice.
+- **`position_context_from_env`** (default `True`; `main.py` pins it `True`) gates
+  reading `TRADINGAGENTS_POSITION_CONTEXT` into a run. The interactive CLI and
+  `backtest` switch it off (see Fixed).
+- CI runs its Python 3.11 lane with `TZ=Asia/Seoul`, the production runtime of
+  `main.py`; in-repo tests now pin what that runner's consumer reads (date forms,
+  the result lines after a debug trace, the `TRADE_PLAN_JSON` shape, every role's
+  model and effort, the account reaching the Portfolio Manager only through the
+  real graph).
 - **Vertex Claude thinking/effort/max_tokens are now wired.** `vertex_anthropic`
   previously ran at `ChatAnthropicVertex` defaults (max_tokens 4096, no thinking).
   New opt-in config knobs `anthropic_effort`, `anthropic_max_tokens`,
@@ -37,6 +45,30 @@ Fork additions (not yet in an upstream release).
 
 ### Fixed
 
+- **The account snapshot reaches only the runs meant to carry it.** Since the
+  v0.5.1 merge the interactive CLI and `backtest` built their state through
+  `create_run_state()`, which read `TRADINGAGENTS_POSITION_CONTEXT`: a value left
+  in the environment or `.env` sized interactive runs, and every past backtest
+  cell, against today's holdings and founding plan. Both now switch the read off.
+- **`propagate()` keeps the macro-news region in the run's own scope.** It wrote
+  `news_region` into the caller's config dict (`DEFAULT_CONFIG` itself when none
+  was passed) and the process-global config, where the next CLI stream or another
+  graph read the previous ticker's region. The interactive CLI now sets the
+  ticker's region too (it used Fed/S&P macro queries for Korean tickers).
+- **A Yahoo outage on a US ticker reads as unavailable, not as no data.** Behind
+  `main.py`'s `wisereport,yfinance` / `naver,yfinance` chains the Korean vendors'
+  refusal of a non-Korean ticker counted as their "no data" verdict and masked
+  upstream's `DATA_UNAVAILABLE` ("the symbol may be invalid, delisted"). The
+  refusal is now a `VendorOutOfScopeError` the router passes over.
+- **Derived Korean Book Value no longer reads `nan`.** Yahoo leaves the newest
+  balance-sheet quarter blank for a while; the derivation took that NaN and printed
+  `Book Value: nan (derived)`. It now uses the most recent reported quarter.
+- **OpenDART's API key stays out of logs.** `safe_get` logged each failed attempt
+  and re-raised requests' error, both quoting the full URL with `crtfc_key`; the
+  key is now masked (`safe_get(..., secret=)`), as upstream's `net.get_scrubbed`
+  does for its vendors (#1324).
+- **`main.py` reads a `YYYYMMDD` date on Python 3.10 as well** (3.10's
+  `date.fromisoformat` does not).
 - **Rating read from the decision's own rating line** (upstream b690dc7, #1383,
   backported onto v0.5.1). v0.5.1's parser took the last `Rating:` label, so a
   rating the Portfolio Manager quoted in a revision note or the Founding Thesis
