@@ -153,6 +153,60 @@ def test_run_graph_forwards_empty_position_context_when_unset(monkeypatch):
     assert call_kwargs["position_context"] == ""
 
 
+# --- 어느 입구가 env 계좌를 읽는가 -------------------------------------------
+# create_run_state 는 propagate() 와 대화형 CLI 가 함께 쓰고, backtest 는 propagate()
+# 를 셀마다 부른다. env(또는 .env)에 남은 계좌 JSON 이 그 모두에 실리면 대화형 run
+# 과 과거일 backtest 셀이 오늘의 보유·Founding Thesis 로 사이징된다. 읽기는
+# position_context_from_env 로 켜고 끈다 -- main.py 는 켜고, CLI 와 backtest 는 끈다.
+
+
+def test_create_run_state_skips_the_env_account_when_the_read_is_off(monkeypatch):
+    monkeypatch.setenv("TRADINGAGENTS_POSITION_CONTEXT", json.dumps({"held_qty": 500}))
+    mock_graph = _bind_real_run_graph(MagicMock(), {"final_trade_decision": "Rating: Hold"})
+    mock_graph.config = {"position_context_from_env": False}
+
+    mock_graph.create_run_state("AAPL", "2026-08-19")
+
+    call_kwargs = mock_graph.propagator.create_initial_state.call_args.kwargs
+    assert call_kwargs["position_context"] == ""
+
+
+def test_the_runner_reads_the_env_account_and_the_cli_does_not():
+    import cli.run as cli_run
+    import main
+
+    assert main.build_config()["position_context_from_env"] is True
+    selections = {
+        "research_depth": 1, "quick_think_llm": "q", "deep_think_llm": "d",
+        "backend_url": None, "llm_provider": "openai",
+    }
+    assert cli_run._build_run_config(selections, None)["position_context_from_env"] is False
+
+
+def test_a_backtest_cell_is_not_sized_against_the_env_account(monkeypatch, tmp_path):
+    import tradingagents.backtest as bt
+    from tradingagents.decision_log import TradingMemoryLog
+
+    monkeypatch.setenv("TRADINGAGENTS_POSITION_CONTEXT", json.dumps({"held_qty": 500}))
+    built = []
+
+    class _Graph:
+        def __init__(self, selected_analysts=None, config=None, **kwargs):
+            built.append(config)
+            self.memory_log = TradingMemoryLog(config)
+
+        def propagate(self, ticker, trade_date, asset_type="stock", portfolio=None):
+            return {}, "Hold"
+
+        def settle_pending(self, ticker):
+            pass
+
+    monkeypatch.setattr(bt, "TradingAgentsGraph", _Graph)
+    bt.run_backtest(["NVDA"], ["2026-01-05"], {"results_dir": str(tmp_path)})
+
+    assert [cfg["position_context_from_env"] for cfg in built] == [False]
+
+
 # ---------------------------------------------------------------------------
 # Task 3: 결정 단계 프롬프트 주입 + 아카이브 스크럽
 #

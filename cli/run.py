@@ -107,6 +107,10 @@ def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
     # the flag preserves TRADINGAGENTS_CHECKPOINT_ENABLED / the default (#976).
     if checkpoint is not None:
         config["checkpoint_enabled"] = checkpoint
+    # The account snapshot in TRADINGAGENTS_POSITION_CONTEXT belongs to the
+    # runner that sets it (alpha-pulse's main.py); an interactive run takes the
+    # caller's book through --portfolio instead.
+    config["position_context_from_env"] = False
     return config
 
 

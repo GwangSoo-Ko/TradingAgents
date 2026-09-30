@@ -146,6 +146,13 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # absent-portfolio notice reaches any prompt. A supplied portfolio is always
     # rendered either way.
     "portfolio_notice_when_absent": True,
+    # Read the Portfolio Manager's account snapshot from
+    # TRADINGAGENTS_POSITION_CONTEXT when a run's state is built (the channel
+    # alpha-pulse's `python main.py` runs use; docs/INTEGRATION.md). The
+    # interactive CLI and the backtest turn it off: the CLI takes the caller's
+    # book through --portfolio, and a backtest cell dated in the past must not
+    # be sized against today's holdings and founding plan.
+    "position_context_from_env": True,
     # Output language for analyst reports and final decision
     # Internal agent debate stays in English for reasoning quality
     "output_language": "English",

@@ -472,8 +472,13 @@ class TradingAgentsGraph:
             portfolio_context=portfolio.render(company_name) if portfolio is not None else "",
             # The caller's account snapshot (TRADINGAGENTS_POSITION_CONTEXT JSON);
             # only the Portfolio Manager reads it, and record_decision() scrubs it
-            # from the archived copy.
-            position_context=_read_position_context(),
+            # from the archived copy. The CLI and the backtest switch the read off
+            # (position_context_from_env), so a variable left in the environment
+            # or .env reaches only the runs that are meant to carry an account.
+            position_context=(
+                _read_position_context()
+                if self.config.get("position_context_from_env", True) else ""
+            ),
         )
 
     def settle_pending(self, company_name):

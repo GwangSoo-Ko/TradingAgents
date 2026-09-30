@@ -76,6 +76,10 @@ def build_config() -> dict:
         # is injected) would gain upstream's "Portfolio context: not provided"
         # notice that the consumer's prompts never carried.
         "portfolio_notice_when_absent": False,
+        # Read that variable into the run (the interactive CLI and the backtest
+        # switch the read off). Pinned here so the consumer's account channel
+        # does not hang on DEFAULT_CONFIG's default.
+        "position_context_from_env": True,
         "role_models": {                     # override the two deep judges -> Opus / max
             "research_manager": {
                 "provider": "vertex_anthropic", "model": "claude-opus-5",
