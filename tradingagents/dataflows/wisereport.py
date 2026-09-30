@@ -23,7 +23,7 @@ import re
 
 from bs4 import BeautifulSoup
 
-from .errors import NoMarketDataError
+from .errors import NoMarketDataError, VendorOutOfScopeError
 from .kr_utils import is_kr_ticker, to_krx_code
 from .rate_limit import safe_get
 
@@ -100,11 +100,11 @@ def _wisereport_section(code: str) -> str:
 
 def get_fundamentals(ticker: str, curr_date: str | None = None) -> str:
     """Complete KR fundamentals: OpenDART audited actuals + wisereport forward
-    estimates / consensus. Raises NoMarketDataError for non-KR (dispatcher
+    estimates / consensus. Raises VendorOutOfScopeError for non-KR (dispatcher
     falls through); NoMarketDataError when neither source yields data.
     """
     if not is_kr_ticker(ticker):
-        raise NoMarketDataError(ticker, detail="wisereport only serves Korean tickers")
+        raise VendorOutOfScopeError(ticker, detail="wisereport only serves Korean tickers")
     code = to_krx_code(ticker)
 
     # Audited actuals + balance sheet from OpenDART (best-effort; needs DART_API_KEY).

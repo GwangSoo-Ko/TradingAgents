@@ -4,6 +4,7 @@ from tradingagents.dataflows.config import get_config
 from tradingagents.dataflows.errors import (
     NoMarketDataError,
     VendorNotConfiguredError,
+    VendorOutOfScopeError,
     VendorRateLimitError,
 )
 from tradingagents.dataflows.naver_news import get_news as get_naver_news
@@ -230,12 +231,19 @@ def route_to_vendor(method: str, *args, **kwargs):
     last_no_data: NoMarketDataError | None = None
     last_unavailable: VendorRateLimitError | None = None
     first_error: Exception | None = None
+    out_of_scope: VendorOutOfScopeError | None = None
     for vendor in vendor_chain:
         vendor_impl = VENDOR_METHODS[method][vendor]
         impl_func = vendor_impl[0] if isinstance(vendor_impl, list) else vendor_impl
 
         try:
             return impl_func(*args, **kwargs)
+        except VendorOutOfScopeError as e:
+            # A Korean-only vendor in a chain that also serves other markets
+            # (main.py's "wisereport,yfinance" on a US ticker) says nothing about
+            # the symbol; kept only for a chain where no other vendor answers.
+            out_of_scope = out_of_scope or e
+            continue
         except VendorRateLimitError as e:
             logger.warning("Vendor %r unavailable for %s: %s; trying next vendor.", vendor, method, e)
             # Kept so an all-unavailable chain can say the vendor was the
@@ -258,6 +266,14 @@ def route_to_vendor(method: str, *args, **kwargs):
             if first_error is None:
                 first_error = e
             continue
+
+    # The vendors that cover the symbol decide the verdict. Only when none of them
+    # reported no data or an outage does an out-of-scope refusal stand in, as the
+    # "no data" it was always reported as: a chain of Korean-only vendors for a US
+    # ticker, or one whose other vendors all errored, still returns the sentinel
+    # rather than raising.
+    if last_no_data is None and last_unavailable is None:
+        last_no_data = out_of_scope
 
     # If any vendor reported "no data", the symbol is genuinely unavailable.
     # Return one explicit, instructive sentinel rather than a vendor-specific

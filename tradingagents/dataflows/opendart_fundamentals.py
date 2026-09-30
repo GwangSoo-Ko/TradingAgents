@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from .errors import NoMarketDataError
+from .errors import NoMarketDataError, VendorOutOfScopeError
 from .kr_utils import is_kr_ticker
 from .opendart_common import corp_code_for, dart_get
 
@@ -56,12 +56,12 @@ def _fmt(amount: str) -> str:
 def get_fundamentals(ticker: str, curr_date: str | None = None) -> str:
     """Audited KR fundamentals (key BS/IS figures) for a Korean ticker.
 
-    Raises NoMarketDataError for non-KR tickers (dispatcher falls through) and
-    NoMarketDataError when OpenDART has no filing (so a 'opendart,yfinance'
+    Raises VendorOutOfScopeError for non-KR tickers (dispatcher falls through)
+    and NoMarketDataError when OpenDART has no filing (so a 'opendart,yfinance'
     chain falls back to yfinance).
     """
     if not is_kr_ticker(ticker):
-        raise NoMarketDataError(ticker, detail="OpenDART only serves Korean tickers")
+        raise VendorOutOfScopeError(ticker, detail="OpenDART only serves Korean tickers")
     corp = corp_code_for(ticker)  # raises NoMarketDataError if unmapped
     year = _latest_available_fiscal_year(curr_date)
 

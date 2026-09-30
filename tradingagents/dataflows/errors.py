@@ -7,6 +7,7 @@ these (or a thin vendor-named subclass) and needs no new ``except`` clause.
 
     VendorError
     ├── NoMarketDataError          no usable rows (empty result OR stale data)
+    │   └── VendorOutOfScopeError  market-specific vendor, symbol from another market
     ├── VendorRateLimitError       transient throttle -> skip to next vendor
     └── VendorNotConfiguredError   missing API key/config -> vendor unavailable
 
@@ -41,6 +42,18 @@ class NoMarketDataError(VendorError):
         if detail:
             msg += f": {detail}"
         super().__init__(msg)
+
+
+class VendorOutOfScopeError(NoMarketDataError):
+    """A market-specific vendor was asked about a symbol outside its market.
+
+    The Korean vendors (Naver news, wisereport, OpenDART) raise it for a
+    non-Korean ticker, before any request. That says nothing about the symbol,
+    so the router passes over the vendor without letting it decide the verdict:
+    a later vendor's outage still reads as DATA_UNAVAILABLE and a real absence
+    carries that vendor's own reason. A chain of only such vendors still reports
+    no data, as a ``NoMarketDataError`` would.
+    """
 
 
 class VendorRateLimitError(VendorError):
