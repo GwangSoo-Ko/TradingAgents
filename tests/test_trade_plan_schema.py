@@ -417,3 +417,30 @@ def test_render_pm_decision_includes_revision():
     )
 
     assert "**Revision** (tactical): 비중만 축소" in md
+
+
+@pytest.mark.parametrize(("typed", "extra", "quoted"), [
+    ("Sell",
+     {"revision": {"kind": "thesis_error",
+                   "note": "The founding rating - Overweight - rested on the sector halo."}},
+     "rating - Overweight"),
+    ("Hold", {"executive_summary": "Most recent prior rating: Buy. 이번에는 관망한다."},
+     "rating: Buy"),
+    ("Sell", {"kill_switch": {"condition": "consensus rating: Hold 로 돌아서면 전량 청산"}},
+     "rating: Hold"),
+    ("Underweight",
+     {"revision": {"kind": "tactical", "note": "진입 당시 등급(Rating: Buy)의 근거가 약해졌다."}},
+     "Rating: Buy"),
+])
+def test_the_rendered_decision_reads_back_as_its_typed_rating(typed, extra, quoted):
+    """메모리 로그 태그(decision_log.store_decision)와 propagate 의 신호는 렌더된 PM
+    마크다운에서 등급을 다시 읽는다. PM 산문은 Founding Thesis 의 옛 등급이나 revision
+    사유 속 다른 등급을 인용한다. upstream v0.5.1 의 '마지막 라벨' 파서는 그 인용을
+    결정으로 읽어 typed Sell 을 'Overweight' 로 태그했다(b690dc7 백포트로 수정). 자기
+    줄을 여는 첫 라벨('**Rating**: X')이 결정이어야 태그가 TRADE_PLAN_JSON.rating 과 같다."""
+    from tradingagents.agents.rating import parse_rating
+
+    md = render_pm_decision(_decision(rating=typed, **extra))
+
+    assert quoted in md  # the prose really quotes a different rating
+    assert parse_rating(md) == typed
