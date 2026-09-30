@@ -253,6 +253,46 @@ class TestDerivedFundamentals:
         assert "N/A (vendor)" not in out
         assert "Data retrieved on" not in out  # no wall-clock stamp on the live path (#1300)
 
+    _KR_INFO = {
+        "longName": "KR Co", "currency": "KRW", "currentPrice": 10000.0,
+        "sharesOutstanding": 1_000_000, "netIncomeToCommon": 5e8,
+        "trailingPE": None, "trailingEps": None, "priceToBook": None, "bookValue": None,
+    }
+
+    def test_kr_book_value_skips_a_quarter_yahoo_has_not_filled_in(self, monkeypatch):
+        """The newest balance-sheet column stays blank (NaN) for a while after a
+        quarter closes -- the KR runs that fall back to Yahoo when wisereport
+        fails. NaN is truthy, so the first-column read derived 'Book Value: nan'
+        and handed the fundamentals analyst a NaN as a valuation anchor."""
+        import re
+
+        import pandas as pd
+        bs = pd.DataFrame(
+            {pd.Timestamp("2026-06-30"): [float("nan"), float("nan")],
+             pd.Timestamp("2026-03-31"): [9.0e9, 1_000_000.0]},
+            index=["Stockholders Equity", "Ordinary Shares Number"],
+        )
+        yf_mod = self._patch(monkeypatch, dict(self._KR_INFO), bs)
+        out = yf_mod.get_fundamentals("123456.KQ")
+        assert not re.search(r"\bnan\b", out, re.IGNORECASE), out
+        assert "Book Value: 9000.0 (derived)" in out
+        assert "Price to Book: 1.11 (derived)" in out
+
+    def test_kr_book_value_with_no_reported_quarter_is_marked_na(self, monkeypatch):
+        import re
+
+        import pandas as pd
+        bs = pd.DataFrame(
+            {pd.Timestamp("2026-06-30"): [float("nan"), float("nan")]},
+            index=["Stockholders Equity", "Ordinary Shares Number"],
+        )
+        yf_mod = self._patch(monkeypatch, dict(self._KR_INFO), bs)
+        out = yf_mod.get_fundamentals("123456.KQ")
+        assert not re.search(r"\bnan\b", out, re.IGNORECASE), out
+        assert "Book Value: N/A (vendor)" in out
+        assert "Price to Book: N/A (vendor)" in out
+        assert "EPS (TTM): 500.0 (derived)" in out  # the income side is unaffected
+
     def test_kr_underivable_marks_na(self, monkeypatch):
         # KOSDAQ name where even inputs are missing -> N/A (vendor), not dropped.
         info = {

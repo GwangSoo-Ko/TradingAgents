@@ -1,3 +1,4 @@
+import math
 from typing import Annotated
 
 import pandas as pd
@@ -12,6 +13,22 @@ from tradingagents.dataflows.vendors.yahoo.ohlcv import (
     raise_for_empty,
     yf_retry,
 )
+
+
+def _latest_reported(row) -> float | None:
+    """A balance-sheet row's most recent finite figure (columns run newest first).
+
+    Yahoo leaves a quarter's cells blank (NaN) until it fills them in, and NaN is
+    truthy, so reading the first column blindly derived "Book Value: nan".
+    """
+    for value in row:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(number):
+            return number
+    return None
 
 
 def get_fundamentals(
@@ -96,11 +113,12 @@ def get_fundamentals(
                 equity = None
                 for row in ("Stockholders Equity", "Common Stock Equity"):
                     if row in bs.index:
-                        equity = float(bs.loc[row].iloc[0])
-                        break
+                        equity = _latest_reported(bs.loc[row])
+                        if equity is not None:
+                            break
                 bvps_shares = shares
                 if "Ordinary Shares Number" in bs.index:
-                    bvps_shares = float(bs.loc["Ordinary Shares Number"].iloc[0]) or shares
+                    bvps_shares = _latest_reported(bs.loc["Ordinary Shares Number"]) or shares
                 if equity and bvps_shares:
                     bvps = equity / bvps_shares
                     if info.get("bookValue") is None:
