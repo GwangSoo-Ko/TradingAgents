@@ -1,0 +1,345 @@
+{
+  "_about": "Served by the harness's yfinance library fake (_fake_data.py). 'info' is what yf.Ticker(sym).info returns (Yahoo key names). KR listings deliberately omit trailingEps/trailingPE/priceToBook/bookValue, as Yahoo does for most .KS/.KQ names, so the fork's KR-derived valuation path runs. Prices are synthetic: a deterministic wave around base_price keyed on the calendar date (see _fake_data.close_on). Statement values are in the listing currency; columns are period-end dates, most recent first. news[].days_before is relative to the run's trade date.",
+  "417310.KS": {
+    "base_price": 10800.0,
+    "price_decimals": 0,
+    "volume_base": 182000,
+    "exchange_tz": "Asia/Seoul",
+    "info": {
+      "symbol": "417310.KS",
+      "shortName": "하나글로벌리츠",
+      "longName": "하나글로벌리츠",
+      "quoteType": "EQUITY",
+      "exchange": "KSC",
+      "fullExchangeName": "KSE",
+      "market": "kr_market",
+      "currency": "KRW",
+      "financialCurrency": "KRW",
+      "country": "South Korea",
+      "sector": "Real Estate",
+      "industry": "REIT - Diversified",
+      "exchangeTimezoneName": "Asia/Seoul",
+      "exchangeTimezoneShortName": "KST",
+      "marketCap": 297000000000,
+      "sharesOutstanding": 27500000,
+      "currentPrice": 10800.0,
+      "regularMarketPrice": 10800.0,
+      "previousClose": 10750.0,
+      "open": 10760.0,
+      "dayLow": 10690.0,
+      "dayHigh": 10870.0,
+      "fiftyTwoWeekLow": 9380.0,
+      "fiftyTwoWeekHigh": 11250.0,
+      "fiftyDayAverage": 10412.0,
+      "twoHundredDayAverage": 10036.0,
+      "averageVolume": 182000,
+      "totalRevenue": 41200000000,
+      "grossProfits": 30100000000,
+      "ebitda": 27800000000,
+      "netIncomeToCommon": 15800000000,
+      "profitMargins": 0.3835,
+      "operatingMargins": 0.612,
+      "returnOnEquity": 0.061,
+      "returnOnAssets": 0.028,
+      "debtToEquity": 118.4,
+      "currentRatio": 0.84,
+      "dividendYield": 6.1,
+      "beta": 0.42,
+      "trailingPegRatio": null
+    },
+    "statements": {
+      "quarterly_ends": ["2026-06-30", "2026-03-31", "2025-12-31", "2025-09-30"],
+      "annual_ends": ["2025-12-31", "2024-12-31", "2023-12-31"],
+      "quarterly_balance_sheet": {
+        "Total Assets": [566000000000, 561500000000, 558200000000, 552900000000],
+        "Total Liabilities Net Minority Interest": [305000000000, 302400000000, 301100000000, 298700000000],
+        "Stockholders Equity": [261000000000, 259100000000, 257100000000, 254200000000],
+        "Common Stock Equity": [261000000000, 259100000000, 257100000000, 254200000000],
+        "Ordinary Shares Number": [27500000, 27500000, 27500000, 27500000],
+        "Cash And Cash Equivalents": [18400000000, 17100000000, 16900000000, 15200000000]
+      },
+      "balance_sheet": {
+        "Total Assets": [558200000000, 541000000000, 530400000000],
+        "Total Liabilities Net Minority Interest": [301100000000, 290700000000, 284900000000],
+        "Stockholders Equity": [257100000000, 250300000000, 245500000000],
+        "Ordinary Shares Number": [27500000, 27500000, 27500000]
+      },
+      "quarterly_income_stmt": {
+        "Total Revenue": [10400000000, 10300000000, 10250000000, 10150000000],
+        "Operating Income": [6400000000, 6300000000, 6250000000, 6150000000],
+        "Net Income": [4000000000, 3950000000, 3900000000, 3850000000],
+        "Diluted EPS": [145.45, 143.64, 141.82, 140.0]
+      },
+      "income_stmt": {
+        "Total Revenue": [40600000000, 39100000000, 37800000000],
+        "Operating Income": [24800000000, 23900000000, 22700000000],
+        "Net Income": [15500000000, 14900000000, 14100000000],
+        "Diluted EPS": [563.64, 541.82, 512.73]
+      },
+      "quarterly_cashflow": {
+        "Operating Cash Flow": [7100000000, 6900000000, 6800000000, 6750000000],
+        "Capital Expenditure": [-400000000, -350000000, -500000000, -300000000],
+        "Free Cash Flow": [6700000000, 6550000000, 6300000000, 6450000000],
+        "Cash Dividends Paid": [-4300000000, -4300000000, -4250000000, -4250000000]
+      },
+      "cashflow": {
+        "Operating Cash Flow": [27200000000, 26100000000, 24900000000],
+        "Capital Expenditure": [-1500000000, -1800000000, -2100000000],
+        "Free Cash Flow": [25700000000, 24300000000, 22800000000]
+      }
+    },
+    "news": [
+      {"title": "상장 리츠, 차입 비용 상승에 수익성 점검", "summary": "만기가 돌아오는 차입금의 이자 비용이 늘고 있다.", "publisher": "연합인포맥스", "days_before": 1},
+      {"title": "리츠 섹터, 금리 인하 기대에 반등", "summary": "상장 리츠 지수가 한 주간 2.1% 올랐다.", "publisher": "한국경제", "days_before": 3},
+      {"title": "Korean REITs weigh refinancing costs as loans come due", "summary": "Listed REITs face higher interest costs on maturing debt this year.", "publisher": "Reuters", "days_before": 5}
+    ]
+  },
+  "005930.KS": {
+    "base_price": 71200.0,
+    "price_decimals": 0,
+    "volume_base": 14800000,
+    "exchange_tz": "Asia/Seoul",
+    "info": {
+      "symbol": "005930.KS",
+      "shortName": "삼성전자",
+      "longName": "삼성전자",
+      "quoteType": "EQUITY",
+      "exchange": "KSC",
+      "fullExchangeName": "KSE",
+      "market": "kr_market",
+      "currency": "KRW",
+      "financialCurrency": "KRW",
+      "country": "South Korea",
+      "sector": "Technology",
+      "industry": "Consumer Electronics",
+      "exchangeTimezoneName": "Asia/Seoul",
+      "exchangeTimezoneShortName": "KST",
+      "marketCap": 425000000000000,
+      "sharesOutstanding": 5969782550,
+      "currentPrice": 71200.0,
+      "regularMarketPrice": 71200.0,
+      "previousClose": 70900.0,
+      "open": 71000.0,
+      "dayLow": 70600.0,
+      "dayHigh": 71600.0,
+      "fiftyTwoWeekLow": 49900.0,
+      "fiftyTwoWeekHigh": 74800.0,
+      "fiftyDayAverage": 69350.0,
+      "twoHundredDayAverage": 61420.0,
+      "averageVolume": 14800000,
+      "totalRevenue": 312000000000000,
+      "grossProfits": 121000000000000,
+      "ebitda": 78000000000000,
+      "netIncomeToCommon": 34100000000000,
+      "profitMargins": 0.1093,
+      "operatingMargins": 0.1175,
+      "returnOnEquity": 0.0871,
+      "returnOnAssets": 0.0512,
+      "debtToEquity": 3.9,
+      "currentRatio": 2.41,
+      "dividendYield": 2.03,
+      "beta": 0.98,
+      "trailingPegRatio": null
+    },
+    "statements": {
+      "quarterly_ends": ["2026-06-30", "2026-03-31", "2025-12-31", "2025-09-30"],
+      "annual_ends": ["2025-12-31", "2024-12-31", "2023-12-31"],
+      "quarterly_balance_sheet": {
+        "Total Assets": [538000000000000, 529400000000000, 514500000000000, 505300000000000],
+        "Total Liabilities Net Minority Interest": [104000000000000, 101200000000000, 99800000000000, 97600000000000],
+        "Stockholders Equity": [424000000000000, 418300000000000, 405100000000000, 398500000000000],
+        "Common Stock Equity": [424000000000000, 418300000000000, 405100000000000, 398500000000000],
+        "Ordinary Shares Number": [5919637922, 5919637922, 5919637922, 5969782550],
+        "Cash And Cash Equivalents": [61200000000000, 58300000000000, 53700000000000, 49800000000000]
+      },
+      "balance_sheet": {
+        "Total Assets": [514500000000000, 455900000000000, 448400000000000],
+        "Total Liabilities Net Minority Interest": [99800000000000, 92200000000000, 92000000000000],
+        "Stockholders Equity": [405100000000000, 353200000000000, 345200000000000],
+        "Ordinary Shares Number": [5919637922, 5969782550, 5969782550]
+      },
+      "quarterly_income_stmt": {
+        "Total Revenue": [81200000000000, 79100000000000, 75800000000000, 79100000000000],
+        "Operating Income": [10400000000000, 9500000000000, 6500000000000, 9200000000000],
+        "Net Income": [9100000000000, 8200000000000, 7800000000000, 10100000000000],
+        "Diluted EPS": [1537.0, 1385.0, 1318.0, 1692.0]
+      },
+      "income_stmt": {
+        "Total Revenue": [300900000000000, 258900000000000, 302200000000000],
+        "Operating Income": [32700000000000, 6600000000000, 43400000000000],
+        "Net Income": [34500000000000, 15500000000000, 55700000000000],
+        "Diluted EPS": [5780.0, 2131.0, 8057.0]
+      },
+      "quarterly_cashflow": {
+        "Operating Cash Flow": [18900000000000, 17200000000000, 16400000000000, 18100000000000],
+        "Capital Expenditure": [-12100000000000, -11800000000000, -13300000000000, -12600000000000],
+        "Free Cash Flow": [6800000000000, 5400000000000, 3100000000000, 5500000000000]
+      },
+      "cashflow": {
+        "Operating Cash Flow": [72900000000000, 44100000000000, 62200000000000],
+        "Capital Expenditure": [-49800000000000, -57600000000000, -53100000000000],
+        "Free Cash Flow": [23100000000000, -13500000000000, 9100000000000]
+      }
+    },
+    "news": [
+      {"title": "삼성전자, HBM3E 12단 엔비디아 퀄 테스트 통과 보도", "summary": "업계에 따르면 공급 물량이 하반기부터 늘어난다.", "publisher": "머니투데이", "days_before": 1},
+      {"title": "외국인, 삼성전자 5거래일 연속 순매수", "summary": "누적 순매수 규모는 1조 2천억원이다.", "publisher": "서울경제", "days_before": 2},
+      {"title": "Samsung Electronics shares rise on memory price recovery", "summary": "DRAM contract prices rose for a third straight month.", "publisher": "Bloomberg", "days_before": 4}
+    ]
+  },
+  "AAPL": {
+    "base_price": 232.14,
+    "price_decimals": 2,
+    "volume_base": 51000000,
+    "exchange_tz": "America/New_York",
+    "info": {
+      "symbol": "AAPL",
+      "shortName": "Apple Inc.",
+      "longName": "Apple Inc.",
+      "quoteType": "EQUITY",
+      "exchange": "NMS",
+      "fullExchangeName": "NasdaqGS",
+      "market": "us_market",
+      "currency": "USD",
+      "financialCurrency": "USD",
+      "country": "United States",
+      "sector": "Technology",
+      "industry": "Consumer Electronics",
+      "exchangeTimezoneName": "America/New_York",
+      "exchangeTimezoneShortName": "EDT",
+      "marketCap": 3452000000000,
+      "sharesOutstanding": 14870000000,
+      "currentPrice": 232.14,
+      "regularMarketPrice": 232.14,
+      "previousClose": 230.88,
+      "open": 231.05,
+      "dayLow": 229.9,
+      "dayHigh": 233.02,
+      "fiftyTwoWeekLow": 169.21,
+      "fiftyTwoWeekHigh": 260.1,
+      "fiftyDayAverage": 224.37,
+      "twoHundredDayAverage": 214.02,
+      "averageVolume": 51000000,
+      "trailingPE": 35.23,
+      "forwardPE": 28.4,
+      "trailingEps": 6.59,
+      "forwardEps": 8.17,
+      "priceToBook": 52.17,
+      "bookValue": 4.45,
+      "totalRevenue": 408600000000,
+      "grossProfits": 190700000000,
+      "ebitda": 138900000000,
+      "netIncomeToCommon": 99300000000,
+      "profitMargins": 0.243,
+      "operatingMargins": 0.299,
+      "returnOnEquity": 1.49,
+      "returnOnAssets": 0.246,
+      "debtToEquity": 154.5,
+      "currentRatio": 0.87,
+      "freeCashflow": 97200000000,
+      "dividendYield": 0.44,
+      "beta": 1.11,
+      "trailingPegRatio": 2.31
+    },
+    "statements": {
+      "quarterly_ends": ["2026-06-27", "2026-03-28", "2025-12-27", "2025-09-27"],
+      "annual_ends": ["2025-09-27", "2024-09-28", "2023-09-30"],
+      "quarterly_balance_sheet": {
+        "Total Assets": [331500000000, 328900000000, 344100000000, 359200000000],
+        "Total Liabilities Net Minority Interest": [265300000000, 262100000000, 277400000000, 285500000000],
+        "Stockholders Equity": [66200000000, 66800000000, 66700000000, 73700000000],
+        "Common Stock Equity": [66200000000, 66800000000, 66700000000, 73700000000],
+        "Ordinary Shares Number": [14870000000, 14940000000, 15020000000, 15120000000],
+        "Cash And Cash Equivalents": [29900000000, 28200000000, 30300000000, 36000000000]
+      },
+      "balance_sheet": {
+        "Total Assets": [359200000000, 364980000000, 352583000000],
+        "Total Liabilities Net Minority Interest": [285500000000, 308030000000, 290437000000],
+        "Stockholders Equity": [73700000000, 56950000000, 62146000000],
+        "Ordinary Shares Number": [15120000000, 15116786000, 15550061000]
+      },
+      "quarterly_income_stmt": {
+        "Total Revenue": [94300000000, 95400000000, 124300000000, 94900000000],
+        "Operating Income": [28200000000, 29600000000, 42800000000, 28000000000],
+        "Net Income": [23400000000, 24800000000, 36300000000, 14700000000],
+        "Diluted EPS": [1.57, 1.65, 2.40, 0.97]
+      },
+      "income_stmt": {
+        "Total Revenue": [408600000000, 391035000000, 383285000000],
+        "Operating Income": [128700000000, 123216000000, 114301000000],
+        "Net Income": [99300000000, 93736000000, 96995000000],
+        "Diluted EPS": [6.59, 6.08, 6.13]
+      },
+      "quarterly_cashflow": {
+        "Operating Cash Flow": [28900000000, 24000000000, 29900000000, 26800000000],
+        "Capital Expenditure": [-3500000000, -3100000000, -2900000000, -2900000000],
+        "Free Cash Flow": [25400000000, 20900000000, 27000000000, 23900000000]
+      },
+      "cashflow": {
+        "Operating Cash Flow": [111500000000, 118254000000, 110543000000],
+        "Capital Expenditure": [-12400000000, -9447000000, -10959000000],
+        "Free Cash Flow": [99100000000, 108807000000, 99584000000]
+      }
+    },
+    "insider_transactions": [
+      {"Shares": 100000, "Value": 22800000, "Text": "Sale at price 227.50 - 229.00 per share.", "Insider": "O'BRIEN DEIRDRE", "Position": "Officer", "Transaction": "Sale", "Start Date": "2026-08-04", "Ownership": "D"},
+      {"Shares": 50000, "Value": 11320000, "Text": "Sale at price 226.40 per share.", "Insider": "ADAMS KATHERINE L", "Position": "General Counsel", "Transaction": "Sale", "Start Date": "2026-07-28", "Ownership": "D"}
+    ],
+    "news": [
+      {"title": "Apple suppliers ramp iPhone 18 production ahead of September event", "summary": "Assembly partners added shifts in Zhengzhou.", "publisher": "Reuters", "days_before": 1},
+      {"title": "Apple services revenue hits record in fiscal Q3", "summary": "App Store and iCloud drove double-digit growth.", "publisher": "CNBC", "days_before": 3},
+      {"title": "Analysts lift Apple price targets on AI device cycle", "summary": "Several brokers raised targets to the 260s.", "publisher": "Barron's", "days_before": 6}
+    ]
+  },
+  "^KS11": {
+    "base_price": 3180.5,
+    "price_decimals": 2,
+    "volume_base": 520000,
+    "exchange_tz": "Asia/Seoul",
+    "info": {
+      "symbol": "^KS11",
+      "shortName": "KOSPI Composite Index",
+      "longName": "KOSPI Composite Index",
+      "quoteType": "INDEX",
+      "exchange": "KSC",
+      "currency": "KRW",
+      "exchangeTimezoneName": "Asia/Seoul",
+      "regularMarketPrice": 3180.5,
+      "trailingPegRatio": null
+    }
+  },
+  "^KQ11": {
+    "base_price": 812.3,
+    "price_decimals": 2,
+    "volume_base": 1100000,
+    "exchange_tz": "Asia/Seoul",
+    "info": {
+      "symbol": "^KQ11",
+      "shortName": "KOSDAQ Composite Index",
+      "longName": "KOSDAQ Composite Index",
+      "quoteType": "INDEX",
+      "exchange": "KOE",
+      "currency": "KRW",
+      "exchangeTimezoneName": "Asia/Seoul",
+      "regularMarketPrice": 812.3,
+      "trailingPegRatio": null
+    }
+  },
+  "SPY": {
+    "base_price": 648.2,
+    "price_decimals": 2,
+    "volume_base": 62000000,
+    "exchange_tz": "America/New_York",
+    "info": {
+      "symbol": "SPY",
+      "shortName": "SPDR S&P 500",
+      "longName": "SPDR S&P 500 ETF Trust",
+      "quoteType": "ETF",
+      "exchange": "PCX",
+      "currency": "USD",
+      "exchangeTimezoneName": "America/New_York",
+      "regularMarketPrice": 648.2,
+      "trailingPegRatio": null
+    }
+  }
+}

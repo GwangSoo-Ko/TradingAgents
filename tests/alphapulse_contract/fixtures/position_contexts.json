@@ -1,0 +1,59 @@
+{
+  "_about": "Synthetic TRADINGAGENTS_POSITION_CONTEXT values in the one-line shape alpha-pulse sends (docs/INTEGRATION.md §4, plus the founding_thesis / founding_thesis_absent_reason keys the fork's build_position_block reads). 'account' is a made-up two-position account; each case's env_value is that account's JSON for one code, with the founding context of the case ('founding': a made-up plan that opened the position, as_of = its trade date, entry_date = KST YYYYMMDD). Every figure and text here is fictional test data (no real account, no recorded plan). explicit_empty is what a run without account data gets: the variable is SET to the empty string, which the fork must treat as 'not injected'.",
+  "account": {
+    "positions": [
+      {
+        "code": "417310",
+        "name": "하나글로벌리츠",
+        "quantity": 1250,
+        "avg_price": 10480.0
+      },
+      {
+        "code": "000810",
+        "name": "삼성화재",
+        "quantity": 40,
+        "avg_price": 381500.0
+      }
+    ],
+    "cash": 421675870.0,
+    "pending": {},
+    "quotes": {
+      "417310": 10800.0,
+      "000810": 396000.0,
+      "005930": 71200.0
+    }
+  },
+  "holding_founding_buy": {
+    "code": "417310",
+    "ticker": "417310.KS",
+    "currency": "KRW",
+    "founding": {
+      "thesis": {
+        "as_of": "20260805",
+        "rating": "Buy",
+        "price_target": 11640.0,
+        "time_horizon": "3-6개월 (다음 배당 기준일까지)",
+        "kill_switch_price": 10240.0,
+        "entry_price": 10480.0,
+        "entry_date": "20260806",
+        "trading_days_held": 8,
+        "last_night_rating": "Overweight"
+      },
+      "absent_reason": ""
+    },
+    "env_value": "{\"held_qty\": 1250, \"avg_price\": 10480.0, \"current_price\": 10800.0, \"unrealized_pnl_pct\": 3.05, \"current_weight_pct\": 2.99, \"cash\": 421675870.0, \"total_nav\": 451015870.0, \"currency\": \"KRW\", \"founding_thesis\": {\"as_of\": \"20260805\", \"rating\": \"Buy\", \"price_target\": 11640.0, \"time_horizon\": \"3-6개월 (다음 배당 기준일까지)\", \"kill_switch_price\": 10240.0, \"entry_price\": 10480.0, \"entry_date\": \"20260806\", \"trading_days_held\": 8, \"last_night_rating\": \"Overweight\"}, \"founding_thesis_absent_reason\": \"\"}"
+  },
+  "not_held": {
+    "code": "005930",
+    "ticker": "005930.KS",
+    "currency": "KRW",
+    "founding": {
+      "thesis": null,
+      "absent_reason": "not_held"
+    },
+    "env_value": "{\"held_qty\": 0, \"avg_price\": null, \"current_price\": 71200.0, \"unrealized_pnl_pct\": null, \"current_weight_pct\": 0.0, \"cash\": 421675870.0, \"total_nav\": 451015870.0, \"currency\": \"KRW\", \"founding_thesis\": null, \"founding_thesis_absent_reason\": \"not_held\"}"
+  },
+  "explicit_empty": {
+    "env_value": ""
+  }
+}
