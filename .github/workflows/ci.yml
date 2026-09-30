@@ -21,6 +21,10 @@ jobs:
         include:
           - python-version: "3.12"
             tz: America/New_York
+          # The fork's production runner executes main.py on 3.11 with
+          # TZ=Asia/Seoul, whose date is a day ahead of UTC until 09:00 KST.
+          - python-version: "3.11"
+            tz: Asia/Seoul
     env:
       TZ: ${{ matrix.tz }}
     steps:

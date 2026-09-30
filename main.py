@@ -3,9 +3,10 @@
 Usage:
     python main.py TICKER [DATE]
 
-TICKER is required (e.g. NVDA, MU, 005930.KS). DATE is optional (YYYY-MM-DD) and
-defaults to today. The run config below is a tiered Vertex Model Garden run on
-Claude — edit or comment out ``build_config`` to fall back to DEFAULT_CONFIG.
+TICKER is required (e.g. NVDA, MU, 005930.KS). DATE is optional (YYYY-MM-DD or
+YYYYMMDD) and defaults to today in the process's time zone (TZ). The run config
+below is a tiered Vertex Model Garden run on Claude — edit or comment out
+``build_config`` to fall back to DEFAULT_CONFIG.
 """
 
 import argparse
@@ -17,11 +18,21 @@ from tradingagents.graph.trading_graph import TradingAgentsGraph
 
 
 def _iso_date(value: str) -> str:
-    """argparse type: accept only YYYY-MM-DD so a bad date fails fast."""
+    """argparse type: a calendar date, returned as YYYY-MM-DD, so a bad date fails fast.
+
+    Accepts YYYY-MM-DD and the basic form YYYYMMDD, which a nightly caller passes
+    (a KST date). ``date.fromisoformat`` reads the basic form only from Python
+    3.11 on, so it is parsed explicitly: on 3.10 the same argv would otherwise
+    fail before the run starts.
+    """
     try:
+        if len(value) == 8 and value.isascii() and value.isdigit():
+            return datetime.datetime.strptime(value, "%Y%m%d").date().isoformat()
         return datetime.date.fromisoformat(value).isoformat()
     except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"date must be YYYY-MM-DD, got {value!r}") from exc
+        raise argparse.ArgumentTypeError(
+            f"date must be YYYY-MM-DD or YYYYMMDD, got {value!r}"
+        ) from exc
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -32,7 +43,7 @@ def parse_args(argv=None) -> argparse.Namespace:
         nargs="?",
         type=_iso_date,
         default=datetime.date.today().isoformat(),
-        help="Analysis date YYYY-MM-DD (default: today)",
+        help="Analysis date, YYYY-MM-DD or YYYYMMDD (default: today in the local time zone)",
     )
     return parser.parse_args(argv)
 
@@ -42,7 +53,7 @@ def build_config() -> dict:
 
     No vendor API key — ADC auth + the optional [vertex] extra; needs
     GOOGLE_CLOUD_PROJECT and ``gcloud auth application-default login``. The two
-    deep judges (Research/Portfolio Manager) run Opus 4.8 at max effort; every
+    deep judges (Research/Portfolio Manager) run Opus 5 at max effort; every
     other role runs Sonnet 5 at high effort. thinking/max_tokens are shared;
     vertex_project/location resolve from GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION
     (default "global"). max_tokens stays <= ~21.3k so the non-streaming node calls

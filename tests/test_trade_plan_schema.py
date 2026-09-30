@@ -12,6 +12,9 @@ from pathlib import Path
 import pytest
 
 from tradingagents.agents.schemas import (
+    ExitTarget,
+    KillSwitch,
+    PlanRevision,
     PortfolioDecision,
     PortfolioRating,
     Tranche,
@@ -354,6 +357,69 @@ def test_main_prints_trade_plan_json_line(monkeypatch, tmp_path, capsys):
     # TRADE_PLAN_JSON.rating -- not the graph's text-parsed signal ("MD" here).
     assert out[out.index(lines[0]) - 1] == "Overweight"
     _assert_report_saved_last(out, tmp_path)
+
+
+# AlphaPulse reads TRADE_PLAN_JSON by key and checks every vocabulary. A renamed,
+# dropped or re-typed field, a re-ordered top level (its fixtures compare the dump)
+# or a changed enum raises nothing on either side -- the plan is stored 'unparsed'
+# or its draft refused -- so the shape is pinned as written at a2981a7, the version
+# the consumer's parser and fixtures were built against. Change it only together
+# with that parser.
+_PLAN_KEYS = ["rating", "price_target", "time_horizon", "total_weight_pct", "stop_loss",
+              "tranches", "exit_target", "kill_switch", "revision"]
+_NESTED_FIELDS = {
+    "tranche": ["seq", "pct", "price_low", "price_high", "trigger", "triggers", "condition"],
+    "trigger": ["kind", "price", "trail_pct", "reference_price", "reference_label", "condition"],
+    "exit_target": ["kind", "remaining_weight_pct"],
+    "kill_switch": ["price", "condition"],
+    "revision": ["kind", "note"],
+}
+
+
+def test_the_trade_plan_line_keeps_the_shape_the_consumer_parses(monkeypatch, tmp_path, capsys):
+    obj = _decision(
+        rating="Sell", price_target=9000, time_horizon="3개월", total_weight_pct=0,
+        stop_loss=12050,
+        tranches=[Tranche(seq=1, pct=100, price_low=10900, price_high=11000,
+                          trigger="conditional", condition="반등 시",
+                          triggers=[TrancheTrigger(kind="take_profit", price=11000)])],
+        exit_target=ExitTarget(kind="full"),
+        kill_switch=KillSwitch(price=9500, condition="지지선 이탈"),
+        revision=PlanRevision(kind="thesis_error", note="업종 후광 소멸"),
+    )
+
+    out = _run_main(monkeypatch, tmp_path, capsys, obj)
+
+    (line,) = [ln for ln in out if ln.startswith("TRADE_PLAN_JSON: ")]
+    payload = json.loads(line[len("TRADE_PLAN_JSON: "):])
+    assert list(payload) == _PLAN_KEYS
+    tranche = payload["tranches"][0]
+    assert list(tranche) == _NESTED_FIELDS["tranche"]
+    assert list(tranche["triggers"][0]) == _NESTED_FIELDS["trigger"]
+    for key in ("exit_target", "kill_switch", "revision"):
+        assert list(payload[key]) == _NESTED_FIELDS[key], key
+    # Numbers stay JSON numbers of the declared type: 12050 is dumped as 12050.0.
+    assert '"stop_loss":12050.0' in line and '"seq":1,' in line
+    assert payload["rating"] == "Sell" and payload["exit_target"]["kind"] == "full"
+
+
+@pytest.mark.parametrize(("model", "field", "vocabulary"), [
+    (PortfolioDecision, "rating", ["Buy", "Overweight", "Hold", "Underweight", "Sell"]),
+    (Tranche, "trigger", ["immediate", "conditional"]),
+    (TrancheTrigger, "kind", ["take_profit", "stop", "trailing", "event"]),
+    (ExitTarget, "kind", ["weight", "cost_recovery", "full"]),
+    (PlanRevision, "kind", ["new_information", "price_action", "thesis_error", "tactical"]),
+])
+def test_the_plan_vocabularies_are_the_ones_the_consumer_accepts(model, field, vocabulary):
+    import enum
+    import typing
+
+    annotation = model.model_fields[field].annotation
+    if isinstance(annotation, type) and issubclass(annotation, enum.Enum):
+        values = [member.value for member in annotation]
+    else:
+        values = list(typing.get_args(annotation))
+    assert values == vocabulary
 
 
 def test_main_omits_trade_plan_json_when_structured_failed(monkeypatch, tmp_path, capsys):
