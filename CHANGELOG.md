@@ -6,6 +6,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Changes that need action when upgrading are listed first in their release.
 
+## [Unreleased]
+
+Fork additions (not yet in an upstream release).
+
+### Added
+
+- **`portfolio_notice_when_absent`** (default `True`). Upstream v0.5.1 tells the
+  Trader, the risk debaters and the Portfolio Manager "Portfolio context: not
+  provided" whenever the caller passes no portfolio. `main.py` sets it `False`:
+  its account context reaches the Portfolio Manager only, through
+  `TRADINGAGENTS_POSITION_CONTEXT`, so no prompt gains the notice.
+- **Vertex Claude thinking/effort/max_tokens are now wired.** `vertex_anthropic`
+  previously ran at `ChatAnthropicVertex` defaults (max_tokens 4096, no thinking).
+  New opt-in config knobs `anthropic_effort`, `anthropic_max_tokens`,
+  `anthropic_thinking` (env `TRADINGAGENTS_ANTHROPIC_{EFFORT,MAX_TOKENS,THINKING}`;
+  also per-role in `role_models`) are computed in
+  `llm_clients.factory.build_llm_kwargs` (tier LLMs) /
+  `TradingAgentsGraph._provider_kwargs_for` (`role_models`) and translated by
+  `VertexAnthropicClient.get_llm` — `max_tokens` direct, `effort` →
+  `output_config.effort`, `thinking` (`"adaptive"`/`"disabled"` shorthand or a
+  dict) → `model_kwargs.thinking`. Unset ⇒ unchanged defaults. The interactive
+  CLI (Step 8) prompts for all three on the Vertex Claude single-model option.
+  Live-verified on Vertex Model Garden (opus-4-8/max, sonnet-5/high). Keep
+  `max_tokens` ≤ ~21000 so the non-streaming node calls stay under the Anthropic
+  SDK's "streaming required" guard. `docs/smoke`: `scripts/smoke_vertex_thinking.py`.
+- **Embedding guide** (`docs/INTEGRATION.md`) for projects internalizing/vendoring
+  the package: public surface, module boundaries, config-key reference, runtime
+  footprint, and dependency footprint.
+
+### Fixed
+
+- **Rating read from the decision's own rating line** (upstream b690dc7, #1383,
+  backported onto v0.5.1). v0.5.1's parser took the last `Rating:` label, so a
+  rating the Portfolio Manager quoted in a revision note or the Founding Thesis
+  replaced its own call in the signal and the memory-log tag. `main.py` prints
+  the typed rating.
+- **Reddit / StockTwits TLS on macOS.** The stdlib-`urllib` vendors verified
+  against the OS CA bundle, which macOS Python.framework installs ship without —
+  every fetch failed with `CERTIFICATE_VERIFY_FAILED`. They now build their SSL
+  context from certifi's bundle (`dataflows/net.py:default_ssl_context`, already a
+  transitive dependency); verification is never disabled. `requests`-based vendors
+  were unaffected.
+
 ## [0.5.1] — 2026-09-24
 
 A package layout organised by what each module holds, social posts screened by
@@ -118,37 +161,6 @@ Thanks to everyone who reported these or sent a fix:
 
 [@akashkpfreelancer](https://github.com/akashkpfreelancer), [@angziii](https://github.com/angziii), [@anupamme](https://github.com/anupamme), [@AyushKar2005](https://github.com/AyushKar2005), [@bulkypanda](https://github.com/bulkypanda), [@CadeYu](https://github.com/CadeYu), [@chiang21fcb](https://github.com/chiang21fcb), [@dajiaohuang](https://github.com/dajiaohuang), [@dewrama](https://github.com/dewrama), [@DogInfantry](https://github.com/DogInfantry), [@emitov](https://github.com/emitov), [@farukerdem34](https://github.com/farukerdem34), [@flydragon2018](https://github.com/flydragon2018), [@fusshell](https://github.com/fusshell), [@Ganesh1729-ui](https://github.com/Ganesh1729-ui), [@gyx09212214-prog](https://github.com/gyx09212214-prog), [@hamzabudeir](https://github.com/hamzabudeir), [@ihsieh31](https://github.com/ihsieh31), [@jaylew20250206](https://github.com/jaylew20250206), [@kaushik-yadav](https://github.com/kaushik-yadav), [@kbnnf](https://github.com/kbnnf), [@kevinkda](https://github.com/kevinkda), [@LudwigJMarx](https://github.com/LudwigJMarx), [@lx7720](https://github.com/lx7720), [@malandrindev](https://github.com/malandrindev), [@mhd325ic-hash](https://github.com/mhd325ic-hash), [@minhdn90](https://github.com/minhdn90), [@miznan](https://github.com/miznan), [@mmssix](https://github.com/mmssix), [@mrbob-git](https://github.com/mrbob-git), [@newnewself](https://github.com/newnewself), [@prithvirajrh](https://github.com/prithvirajrh), [@PyriteResearch](https://github.com/PyriteResearch), [@Rajatendu1](https://github.com/Rajatendu1), [@Recnelis0](https://github.com/Recnelis0), [@Rodvask](https://github.com/Rodvask), [@samhoooo](https://github.com/samhoooo), [@sheiun-xu](https://github.com/sheiun-xu), [@shivsin25](https://github.com/shivsin25), [@SmileShaun](https://github.com/SmileShaun), [@SonnyRajagopalan](https://github.com/SonnyRajagopalan), [@taro0915](https://github.com/taro0915), [@wupengbo125](https://github.com/wupengbo125), [@wxggzz](https://github.com/wxggzz), [@Yixiang-Wu](https://github.com/Yixiang-Wu), [@ZahirBodrike](https://github.com/ZahirBodrike), [@ZHUYAWEI](https://github.com/ZHUYAWEI), [@zkwang616](https://github.com/zkwang616).
 
-## [Unreleased]
-
-Fork additions (not yet in an upstream release).
-
-### Added
-
-- **Vertex Claude thinking/effort/max_tokens are now wired.** `vertex_anthropic`
-  previously ran at `ChatAnthropicVertex` defaults (max_tokens 4096, no thinking).
-  New opt-in config knobs `anthropic_effort`, `anthropic_max_tokens`,
-  `anthropic_thinking` (env `TRADINGAGENTS_ANTHROPIC_{EFFORT,MAX_TOKENS,THINKING}`;
-  also per-role in `role_models`) are computed in
-  `_get_provider_kwargs`/`_provider_kwargs_for` and translated by
-  `VertexAnthropicClient.get_llm` — `max_tokens` direct, `effort` →
-  `output_config.effort`, `thinking` (`"adaptive"`/`"disabled"` shorthand or a
-  dict) → `model_kwargs.thinking`. Unset ⇒ unchanged defaults. The interactive
-  CLI (Step 8) prompts for all three on the Vertex Claude single-model option.
-  Live-verified on Vertex Model Garden (opus-4-8/max, sonnet-5/high). Keep
-  `max_tokens` ≤ ~21000 so the non-streaming node calls stay under the Anthropic
-  SDK's "streaming required" guard. `docs/smoke`: `scripts/smoke_vertex_thinking.py`.
-- **Embedding guide** (`docs/INTEGRATION.md`) for projects internalizing/vendoring
-  the package: public surface, module boundaries, config-key reference, runtime
-  footprint, and dependency footprint.
-
-### Fixed
-
-- **Reddit / StockTwits TLS on macOS.** The stdlib-`urllib` vendors verified
-  against the OS CA bundle, which macOS Python.framework installs ship without —
-  every fetch failed with `CERTIFICATE_VERIFY_FAILED`. They now build their SSL
-  context from certifi's bundle (`dataflows/net.py:default_ssl_context`, already a
-  transitive dependency); verification is never disabled. `requests`-based vendors
-  were unaffected.
 ## [0.4.0] — 2026-08-31
 
 Look-ahead and point-in-time fixes across the data and memory layers, clearer
