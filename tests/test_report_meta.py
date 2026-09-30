@@ -1,7 +1,7 @@
 """Report metadata: analysis-mode tag (folder name) + config block (report header)."""
 import pytest
 
-from cli.report_meta import analysis_config_block, analysis_mode_tag
+from cli.report_meta import analysis_config_block, analysis_mode_tag, build_report_header
 
 
 @pytest.mark.unit
@@ -59,3 +59,75 @@ class TestAnalysisConfigBlock:
         # all 12 roles appear
         for role in ("market_analyst", "bull_researcher", "portfolio_manager", "neutral_debator"):
             assert role in block
+
+
+@pytest.mark.unit
+class TestBuildReportHeader:
+    """The title block of complete_report.md that main.py and the CLI write.
+
+    alpha-pulse shows it (web report view, discovery input): the title names the
+    company and the ticker, then the time, then the model behind every role. The
+    expected strings are the layout the fork's own writer produced before the
+    writer moved to tradingagents.reporting (title, blank, Generated, blank,
+    config block).
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clock_and_identity(self, monkeypatch):
+        import datetime as dt
+
+        import cli.report_meta as report_meta
+        import tradingagents.agents.context as context
+
+        class _Clock(dt.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 8, 19, 21, 34, 5)
+
+        monkeypatch.setattr(report_meta, "datetime", _Clock)
+        monkeypatch.setattr(context, "resolve_instrument_identity",
+                            lambda t: {"company_name": "하나글로벌리츠"} if t == "417310.KS" else {})
+
+    def test_single_model_header(self):
+        cfg = {"llm_provider": "openai", "quick_think_llm": "gpt-5.4-mini", "deep_think_llm": "gpt-5.5"}
+        assert build_report_header("417310.KS", cfg) == (
+            "# Trading Analysis Report: 하나글로벌리츠 (417310.KS)\n\n"
+            "Generated: 2026-08-19 21:34:05\n\n"
+            "**Analysis mode:** single-model\n\n"
+            "**Provider:** `openai` · **quick-tier:** `gpt-5.4-mini` · **deep-tier:** `gpt-5.5`\n\n"
+        )
+
+    def test_without_a_name_or_a_config_the_title_is_the_bare_ticker(self):
+        assert build_report_header("ZZZZ") == (
+            "# Trading Analysis Report: ZZZZ\n\nGenerated: 2026-08-19 21:34:05\n\n"
+        )
+
+    def test_main_py_config_lists_opus_judges_and_sonnet_for_every_other_role(self):
+        import main
+
+        header = build_report_header("417310.KS", main.build_config())
+
+        assert header.startswith(
+            "# Trading Analysis Report: 하나글로벌리츠 (417310.KS)\n\n"
+            "Generated: 2026-08-19 21:34:05\n\n"
+            "**Analysis mode:** vertex-multimodel\n\n"
+            "| Role | Provider | Model |\n| --- | --- | --- |\n"
+        )
+        assert header.endswith("` |\n\n")
+        rows = [line for line in header.splitlines() if line.startswith("| ") and "`" in line]
+        judges = {"research_manager", "portfolio_manager"}
+        assert len(rows) == 12
+        for role in judges:
+            assert f"| {role} | `vertex_anthropic` | `claude-opus-5` |" in rows
+        for row in rows:
+            if row.split(" ")[1] not in judges:
+                assert row.endswith("*(tier default)* | `vertex_anthropic` | `claude-sonnet-5` |")
+
+    def test_the_writer_puts_it_above_the_sections(self, tmp_path):
+        from tradingagents.reporting import write_report_tree
+
+        header = build_report_header("417310.KS")
+        out = write_report_tree({"market_report": "MKT"}, "417310.KS", tmp_path, header=header)
+
+        assert out.read_text(encoding="utf-8") == (
+            header + "## I. Analyst Team Reports\n\n### Market Analyst\nMKT")

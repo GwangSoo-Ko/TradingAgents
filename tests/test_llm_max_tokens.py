@@ -13,9 +13,10 @@ import importlib
 import pytest
 
 import tradingagents.default_config as default_config_module
-from tradingagents.graph.trading_graph import TradingAgentsGraph, _coerce_max_tokens
+from tradingagents.llm_clients.factory import _coerce_max_tokens, build_llm_kwargs
 
 # --- coercion / validation -------------------------------------------------
+
 
 @pytest.mark.unit
 @pytest.mark.parametrize("value,expected", [(1, 1), (8192, 8192), ("4096", 4096)])
@@ -46,15 +47,10 @@ def test_coerce_rejects_non_integers(bad):
 
 # --- forwarding into provider kwargs (right key per provider) --------------
 
-def _bare_graph(config):
-    g = object.__new__(TradingAgentsGraph)
-    g.config = config
-    return g
-
 
 @pytest.mark.unit
 def test_not_forwarded_when_unset():
-    kwargs = _bare_graph({"llm_provider": "openai", "max_tokens": None})._get_provider_kwargs()
+    kwargs = build_llm_kwargs({"llm_provider": "openai", "max_tokens": None})
     assert "max_tokens" not in kwargs
     assert "max_output_tokens" not in kwargs
 
@@ -62,7 +58,7 @@ def test_not_forwarded_when_unset():
 @pytest.mark.unit
 @pytest.mark.parametrize("provider", ["openai", "anthropic", "deepseek", "openai_compatible"])
 def test_forwarded_as_max_tokens_for_non_google(provider):
-    kwargs = _bare_graph({"llm_provider": provider, "max_tokens": 8192})._get_provider_kwargs()
+    kwargs = build_llm_kwargs({"llm_provider": provider, "max_tokens": 8192})
     assert kwargs["max_tokens"] == 8192
     assert "max_output_tokens" not in kwargs
 
@@ -70,21 +66,21 @@ def test_forwarded_as_max_tokens_for_non_google(provider):
 @pytest.mark.unit
 def test_forwarded_as_max_output_tokens_for_google():
     # Gemini's kwarg name differs; forwarding plain max_tokens would be rejected.
-    kwargs = _bare_graph({"llm_provider": "google", "max_tokens": 8192})._get_provider_kwargs()
+    kwargs = build_llm_kwargs({"llm_provider": "google", "max_tokens": 8192})
     assert kwargs["max_output_tokens"] == 8192
     assert "max_tokens" not in kwargs
 
 
 @pytest.mark.unit
 def test_env_string_is_coerced():
-    kwargs = _bare_graph({"llm_provider": "openai", "max_tokens": "4096"})._get_provider_kwargs()
+    kwargs = build_llm_kwargs({"llm_provider": "openai", "max_tokens": "4096"})
     assert kwargs["max_tokens"] == 4096
 
 
 @pytest.mark.unit
 def test_invalid_value_fails_loudly():
     with pytest.raises(ValueError):
-        _bare_graph({"llm_provider": "openai", "max_tokens": 0})._get_provider_kwargs()
+        build_llm_kwargs({"llm_provider": "openai", "max_tokens": 0})
 
 
 # --- client-side allowlists carry the kwarg --------------------------------
@@ -133,11 +129,11 @@ def test_env_override_sets_config(monkeypatch):
 
 @pytest.mark.unit
 def test_vertex_anthropic_max_tokens_wins_over_generic():
-    kwargs = _bare_graph({
+    kwargs = build_llm_kwargs({
         "llm_provider": "vertex_anthropic",
         "anthropic_max_tokens": 20000,
         "max_tokens": 65536,  # generic 이 더 크더라도 전용 값이 이겨야 한다
-    })._get_provider_kwargs()
+    })
 
     assert kwargs["max_tokens"] == 20000, "generic 설정이 정책값을 덮었다"
 
@@ -145,10 +141,40 @@ def test_vertex_anthropic_max_tokens_wins_over_generic():
 @pytest.mark.unit
 def test_generic_max_tokens_still_applies_when_no_dedicated_value():
     """가드가 generic 경로 자체를 죽이면 안 된다 — 전용 값이 없을 때는 그대로 쓴다."""
-    kwargs = _bare_graph({
+    kwargs = build_llm_kwargs({
         "llm_provider": "vertex_anthropic",
         "anthropic_max_tokens": None,
         "max_tokens": 8192,
-    })._get_provider_kwargs()
+    })
 
     assert kwargs["max_tokens"] == 8192
+
+
+@pytest.mark.unit
+def test_vertex_anthropic_tier_kwargs_match_the_production_run():
+    """The tier path hands VertexAnthropicClient exactly what main.py's config asks
+    for (effort / dedicated cap / thinking), and nothing else -- no generic cap, no
+    temperature, no retry budget sneaking in as a default."""
+    kwargs = build_llm_kwargs({
+        "llm_provider": "vertex_anthropic",
+        "anthropic_effort": "high",
+        "anthropic_max_tokens": 20000,
+        "anthropic_thinking": "adaptive",
+        "temperature": None,
+        "llm_max_retries": None,
+        "max_tokens": "8000",  # TRADINGAGENTS_MAX_TOKENS arrives as a string
+    })
+
+    assert kwargs == {"effort": "high", "max_tokens": 20000, "thinking": "adaptive"}
+
+
+@pytest.mark.unit
+def test_vendor_direct_anthropic_gets_effort_but_not_the_vertex_knobs():
+    kwargs = build_llm_kwargs({
+        "llm_provider": "anthropic",
+        "anthropic_effort": "high",
+        "anthropic_max_tokens": 20000,
+        "anthropic_thinking": "adaptive",
+    })
+
+    assert kwargs == {"effort": "high"}

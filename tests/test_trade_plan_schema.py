@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -158,7 +159,7 @@ def test_invoke_structured_returns_object_alongside_markdown():
     """렌더 결과만 반환하면 객체가 버려져 stdout 으로 꺼낼 수 없다."""
     from unittest.mock import MagicMock
 
-    from tradingagents.agents.utils.structured import invoke_structured_or_freetext
+    from tradingagents.agents.structured import invoke_structured_or_freetext
 
     obj = _decision(total_weight_pct=3.0)
     structured = MagicMock()
@@ -176,7 +177,7 @@ def test_freetext_fallback_returns_none_object():
     """구조화가 실패하면 계획이 없다 — AlphaPulse 는 이때 초안을 만들지 않는다."""
     from unittest.mock import MagicMock
 
-    from tradingagents.agents.utils.structured import invoke_structured_or_freetext
+    from tradingagents.agents.structured import invoke_structured_or_freetext
 
     structured = MagicMock()
     structured.invoke.side_effect = RuntimeError("boom")
@@ -198,7 +199,7 @@ def test_state_declares_portfolio_decision_obj():
     최종 state 에서 사라진다. 선언이 빠지면 main.py 의 TRADE_PLAN_JSON 이
     영구히 안 나오는데 아무도 못 알아챈다.
     """
-    from tradingagents.agents.utils.agent_states import AgentState
+    from tradingagents.agents.state import AgentState
 
     assert "portfolio_decision_obj" in AgentState.__annotations__
 
@@ -220,6 +221,35 @@ def test_portfolio_manager_node_puts_object_in_state():
 
     assert result["portfolio_decision_obj"] is obj
     assert "**Rating**: Overweight" in result["final_trade_decision"]
+
+
+def test_pm_output_section_names_the_plan_fields():
+    """upstream 486dec1 의 PM '## Output' 은 Rating/Executive Summary/Investment
+    Thesis 세 섹션만 나열한다. 계획 필드가 목록에 없으면 구조화 호출이 선택 필드를
+    덜 채울 수 있다 -- tranches 가 비면 AlphaPulse 는 델타 전량을 현재가로 한 번에
+    주문하고, 비중이 비면 초안이 0건이다. 포크는 그 목록에 계획 필드와 revision
+    지시를 얹는다."""
+    from unittest.mock import MagicMock
+
+    from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
+
+    captured = {}
+    structured = MagicMock()
+    structured.invoke.side_effect = lambda prompt: (
+        captured.__setitem__("prompt", prompt) or _decision()
+    )
+    llm = MagicMock()
+    llm.with_structured_output.return_value = structured
+
+    create_portfolio_manager(llm)(_pm_state())
+
+    assert "## Output" in captured["prompt"]
+    section = captured["prompt"].split("## Output", 1)[1]
+    for field in ("total_weight_pct", "tranches", "stop_loss", "exit_target",
+                  "kill_switch", "revision"):
+        assert f"`{field}`" in section, field
+    # The rating still leads the list (free-text readers take the first labelled rating).
+    assert section.index("**Rating**") < section.index("`total_weight_pct`")
 
 
 def test_portfolio_manager_node_carries_none_on_freetext_fallback():
@@ -262,11 +292,49 @@ def _pm_state() -> dict:
     }
 
 
+def _run_main(monkeypatch, tmp_path, capsys, plan_obj) -> list[str]:
+    """main.main() 를 가짜 그래프로 돌리고 stdout 줄을 돌려준다.
+
+    보고서 작성기는 가짜로 바꾸지 않는다 -- main.py 의 post-run import(보고서
+    작성기, safe_ticker_component, 헤더 헬퍼)는 유료 run 이 전부 끝난 뒤에야
+    실행되므로, 그 경로가 깨지면 계획을 찍고도 rc 1 이 되어 AlphaPulse 가 계획을
+    버린다. 작성기만 monkeypatch 하면 그 파손이 가려진다. 실제 작성기가 tmp_path
+    아래에 쓰고, 오프라인 유지를 위해 헤더의 회사명 조회(identity)만 스텁한다.
+
+    results_dir 는 main.build_config 의 결과에 직접 덮어쓴다. DEFAULT_CONFIG 를
+    고치면 안 된다 -- 다른 테스트가 default_config 를 reload 하면 main 이 쥔
+    DEFAULT_CONFIG 는 다른 dict 라서, 보고서가 사용자의 실제 results 디렉터리에
+    써진다.
+    """
+    import main as m
+    from tradingagents.agents import context
+
+    class FakeGraph:
+        def __init__(self, *a, **k):
+            pass
+
+        def propagate(self, ticker, date):
+            return {"final_trade_decision": "MD", "portfolio_decision_obj": plan_obj}, "MD"
+
+    real_build_config = m.build_config
+    monkeypatch.setattr(m, "build_config",
+                        lambda: {**real_build_config(), "results_dir": str(tmp_path)})
+    monkeypatch.setattr(m, "TradingAgentsGraph", FakeGraph)
+    monkeypatch.setattr(context, "resolve_instrument_identity", lambda ticker: {})
+    m.main(["005830.KS", "2026-08-18"])
+    return capsys.readouterr().out.splitlines()
+
+
+def _assert_report_saved_last(lines: list[str], tmp_path) -> None:
+    """AlphaPulse 는 마지막 'Report saved:' 줄로 run 완료를 판정한다."""
+    assert lines and lines[-1].startswith("Report saved: "), lines[-3:]
+    report = Path(lines[-1][len("Report saved: "):])
+    assert report.name == "complete_report.md" and report.is_file(), report
+    assert report.resolve().is_relative_to(tmp_path.resolve()), report
+
+
 def test_main_prints_trade_plan_json_line(monkeypatch, tmp_path, capsys):
     """Task 2 의 AlphaPulse 파서가 읽는 것은 stdout 의 이 한 줄이다."""
-    import cli.main as cli_main
-    import main as m
-
     obj = _decision(
         total_weight_pct=3.0,
         stop_loss=12050,
@@ -274,45 +342,27 @@ def test_main_prints_trade_plan_json_line(monkeypatch, tmp_path, capsys):
                           trigger="immediate")],
     )
 
-    class FakeGraph:
-        def __init__(self, *a, **k):
-            pass
+    out = _run_main(monkeypatch, tmp_path, capsys, obj)
 
-        def propagate(self, ticker, date):
-            return {"final_trade_decision": "MD", "portfolio_decision_obj": obj}, "MD"
-
-    monkeypatch.setattr(m, "TradingAgentsGraph", FakeGraph)
-    monkeypatch.setattr(cli_main, "save_report_to_disk",
-                        lambda *a, **k: tmp_path / "complete_report.md")
-    m.main(["005830.KS", "2026-08-18"])
-
-    lines = [ln for ln in capsys.readouterr().out.splitlines()
-             if ln.startswith("TRADE_PLAN_JSON: ")]
+    lines = [ln for ln in out if ln.startswith("TRADE_PLAN_JSON: ")]
     assert len(lines) == 1
     payload = json.loads(lines[0][len("TRADE_PLAN_JSON: "):])
     assert payload["total_weight_pct"] == 3.0
     assert payload["stop_loss"] == 12050
     assert payload["tranches"][0]["trigger"] == "immediate"
+    # The decision line right above it is the typed rating -- the same value as
+    # TRADE_PLAN_JSON.rating -- not the graph's text-parsed signal ("MD" here).
+    assert out[out.index(lines[0]) - 1] == "Overweight"
+    _assert_report_saved_last(out, tmp_path)
 
 
 def test_main_omits_trade_plan_json_when_structured_failed(monkeypatch, tmp_path, capsys):
     """폴백이면 줄이 아예 없다 — 소비자는 계획을 지어내면 안 된다."""
-    import cli.main as cli_main
-    import main as m
+    out = _run_main(monkeypatch, tmp_path, capsys, None)
 
-    class FakeGraph:
-        def __init__(self, *a, **k):
-            pass
-
-        def propagate(self, ticker, date):
-            return {"final_trade_decision": "MD", "portfolio_decision_obj": None}, "MD"
-
-    monkeypatch.setattr(m, "TradingAgentsGraph", FakeGraph)
-    monkeypatch.setattr(cli_main, "save_report_to_disk",
-                        lambda *a, **k: tmp_path / "complete_report.md")
-    m.main(["005830.KS", "2026-08-18"])
-
-    assert "TRADE_PLAN_JSON:" not in capsys.readouterr().out
+    assert not [ln for ln in out if "TRADE_PLAN_JSON:" in ln]
+    assert "MD" in out  # no typed plan: the graph's signal is the decision line
+    _assert_report_saved_last(out, tmp_path)
 
 
 def test_portfolio_decision_carries_revision():

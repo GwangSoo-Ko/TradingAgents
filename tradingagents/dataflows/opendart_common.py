@@ -20,10 +20,9 @@ import zipfile
 from pathlib import Path
 
 from .config import get_config
-from .errors import VendorNotConfiguredError
+from .errors import NoMarketDataError, VendorNotConfiguredError
 from .kr_utils import to_krx_code
 from .rate_limit import safe_get
-from .symbol_utils import NoMarketDataError
 
 logger = logging.getLogger(__name__)
 

@@ -10,8 +10,15 @@ from datetime import datetime
 from pathlib import Path
 
 
-def write_report_tree(final_state: dict, ticker: str, save_path) -> Path:
-    """Save a completed run's reports to ``save_path``; return the complete-report path."""
+def write_report_tree(final_state: dict, ticker: str, save_path, *,
+                      header: str | None = None) -> Path:
+    """Save a completed run's reports to ``save_path``; return the complete-report path.
+
+    ``header`` replaces the default title block of ``complete_report.md`` (the
+    fork's CLI and main.py pass one that names the company and lists the model
+    behind every role, see ``cli.report_meta.build_report_header``). The section
+    files and the report body are the same either way.
+    """
     save_path = Path(save_path)
     save_path.mkdir(parents=True, exist_ok=True)
     sections = []
@@ -96,6 +103,7 @@ def write_report_tree(final_state: dict, ticker: str, save_path) -> Path:
             sections.append(f"## V. Portfolio Manager Decision\n\n### Portfolio Manager\n{risk['judge_decision']}")
 
     # Write consolidated report
-    header = f"# Trading Analysis Report: {ticker}\n\nGenerated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    if header is None:
+        header = f"# Trading Analysis Report: {ticker}\n\nGenerated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
     (save_path / "complete_report.md").write_text(header + "\n\n".join(sections), encoding="utf-8")
     return save_path / "complete_report.md"

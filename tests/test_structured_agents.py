@@ -7,12 +7,14 @@ behavior we added for the Trader, Research Manager, and Sentiment Analyst
 so they share the same deterministic output shape.
 """
 
+import inspect
 from unittest.mock import MagicMock
 
 import pytest
 from pydantic import ValidationError
 
 from tradingagents.agents.analysts.sentiment_analyst import create_sentiment_analyst
+from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
 from tradingagents.agents.managers.research_manager import create_research_manager
 from tradingagents.agents.schemas import (
     ExitTarget,
@@ -63,12 +65,13 @@ class TestRenderTraderProposal:
         assert "**Position Sizing**: 6% of portfolio" in md
         assert "FINAL TRANSACTION PROPOSAL: **BUY**" in md
 
-    def test_optional_fields_omitted_when_absent(self):
+    def test_optional_fields_are_named_as_not_provided(self):
+        """An omitted line reads as a field nobody asked for; the reader cannot
+        tell it from a level the trader declined to set."""
         p = TraderProposal(action=TraderAction.SELL, reasoning="Guidance cut.")
         md = render_trader_proposal(p)
-        assert "Entry Price" not in md
-        assert "Stop Loss" not in md
-        assert "Position Sizing" not in md
+        for field in ("Entry Price", "Stop Loss", "Position Sizing"):
+            assert f"**{field}**: not provided" in md
         assert "FINAL TRANSACTION PROPOSAL: **SELL**" in md
 
 
@@ -185,6 +188,46 @@ class TestNullishFloatCoercion:
             assert ks.price is None
         assert KillSwitch(price="9100", condition="c").price == 9100.0
 
+    # The three below pin upstream's salvaging coercer, which stays on the
+    # Trader's proposal only. The Portfolio Manager's plan numbers are
+    # fail-closed instead -- see the fork tests at the end of this file.
+    def test_percentage_answer_to_a_price_field_becomes_none(self):
+        # The Trader is asked for concrete levels and may answer a price field
+        # with a distance ("15%"), which failed the whole proposal (#1288).
+        # A percentage cannot be salvaged: 15% must not become a $15 stop.
+        for pct in ("15%", " 7.5% ", "-10%"):
+            p = TraderProposal(
+                action=TraderAction.BUY,
+                reasoning="x",
+                entry_price=pct,
+                stop_loss=pct,
+            )
+            assert p.entry_price is None
+            assert p.stop_loss is None
+
+    def test_human_formatted_price_is_reduced_to_its_number(self):
+        p = TraderProposal(
+            action=TraderAction.BUY,
+            reasoning="x",
+            entry_price="$1,234.50",
+            stop_loss="1,180",
+        )
+        assert p.entry_price == 1234.50
+        assert p.stop_loss == 1180.0
+
+    def test_one_bad_field_no_longer_fails_the_whole_proposal(self):
+        # Previously a single '15%' raised, forcing a free-text retry that lost
+        # the action and reasoning; now the rest of the proposal survives.
+        p = TraderProposal(
+            action=TraderAction.SELL,
+            reasoning="downgrade on margin compression",
+            entry_price="612.40",
+            stop_loss="15%",
+        )
+        assert p.action is TraderAction.SELL
+        assert p.entry_price == 612.40
+        assert p.stop_loss is None
+
 
 @pytest.mark.unit
 class TestRenderResearchPlan:
@@ -245,7 +288,7 @@ def _structured_trader_llm(captured: dict, proposal: TraderProposal | None = Non
 def test_invoke_structured_falls_back_when_result_is_none():
     # A thinking model can answer in plain text, leaving the parser with None.
     # That must fall back to free text, not crash on render(None) (#1051).
-    from tradingagents.agents.utils.structured import invoke_structured_or_freetext
+    from tradingagents.agents.structured import invoke_structured_or_freetext
 
     structured = MagicMock()
     structured.invoke.return_value = None
@@ -484,6 +527,64 @@ def _structured_sentiment_llm(captured: dict, report: SentimentReport | None = N
 
 @pytest.mark.unit
 class TestSentimentAnalystAgent:
+    @pytest.fixture(autouse=True)
+    def _stub_prefetched_sources(self, monkeypatch):
+        """Stub the sources the analyst pre-fetches before prompting.
+
+        create_sentiment_analyst fetches news, StockTwits and Reddit itself, so
+        without this these tests hit the live network. A real Reddit 429 then
+        backs the fetcher off for a minute per subreddit, which is what turned
+        this file into a multi-minute hang.
+        """
+        from tradingagents.agents.analysts import sentiment_analyst as sentiment
+
+        monkeypatch.setattr(sentiment, "fetch_stocktwits_messages", lambda *a, **k: "st")
+        monkeypatch.setattr(sentiment, "fetch_reddit_posts", lambda *a, **k: "rd")
+        monkeypatch.setattr(sentiment.get_news, "func", lambda *a, **k: "news", raising=False)
+        # The fork's Reddit recall looks the company name up through the
+        # identity resolver (yfinance, whose curl_cffi transport the socket
+        # guard in conftest cannot see), so stub it too.
+        monkeypatch.setattr(sentiment, "resolve_instrument_identity", lambda ticker: {})
+
+    def test_reddit_fetch_gets_the_company_name_and_the_screen(self, monkeypatch):
+        """Fork 2215b60 widens Reddit recall with the company name, on top of
+        upstream's Jev screen (c924f84). Every other test stubs the fetcher
+        with ``lambda *a, **k``, which accepts a keyword the real fetcher may
+        not take and so hides a TypeError that would kill the node on every
+        live run. Bind each call to the real signature so that cannot pass."""
+        from tradingagents.agents.analysts import sentiment_analyst as sentiment
+        from tradingagents.dataflows.vendors import reddit as reddit_vendor
+
+        real = inspect.signature(reddit_vendor.fetch_reddit_posts)
+        seen = {}
+
+        def fetch(*args, **kwargs):
+            real.bind(*args, **kwargs)  # TypeError if the real fetcher rejects the call
+            seen.update(kwargs, ticker=args[0])
+            return "rd"
+
+        screen = object()
+        monkeypatch.setattr(sentiment, "fetch_reddit_posts", fetch)
+        monkeypatch.setattr(sentiment, "jev_screen", lambda ticker: screen)
+        monkeypatch.setattr(sentiment, "resolve_instrument_identity",
+                            lambda ticker: {"company_name": "NVIDIA Corporation"})
+
+        create_sentiment_analyst(_structured_sentiment_llm({}))(_make_sentiment_state())
+
+        assert seen["ticker"] == "NVDA"
+        assert seen["company_name"] == "NVIDIA Corporation"
+        assert seen["screen"] is screen
+        assert (seen["start_date"], seen["end_date"]) == ("2026-01-08", "2026-01-15")
+
+    def test_reddit_fetch_falls_back_to_the_ticker_without_a_company_name(self, monkeypatch):
+        from tradingagents.agents.analysts import sentiment_analyst as sentiment
+
+        seen = {}
+        monkeypatch.setattr(sentiment, "fetch_reddit_posts",
+                            lambda *a, **k: seen.update(k) or "rd")
+        create_sentiment_analyst(_structured_sentiment_llm({}))(_make_sentiment_state())
+        assert seen["company_name"] is None
+
     def test_structured_path_produces_rendered_markdown(self):
         captured = {}
         report = SentimentReport(
@@ -523,3 +624,112 @@ class TestSentimentAnalystAgent:
         llm.with_structured_output.return_value = structured
         llm.invoke.return_value = MagicMock(content=plain)
         assert create_sentiment_analyst(llm)(_make_sentiment_state())["sentiment_report"] == plain
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("source", [
+    pytest.param(lambda: ResearchPlan.model_fields["recommendation"].description, id="ResearchPlan.recommendation"),
+    pytest.param(lambda: PortfolioDecision.model_fields["rating"].description, id="PortfolioDecision.rating"),
+    pytest.param(lambda: inspect.getsource(create_research_manager), id="research_manager prompt"),
+    pytest.param(lambda: inspect.getsource(create_portfolio_manager), id="portfolio_manager prompt"),
+])
+def test_conflict_alone_is_not_a_hold_trigger(source):
+    # The debate always contains conflicting arguments, so a Hold condition that
+    # conflict satisfies fires on every run and swallows directional calls
+    # (#1321). All four decision sites must state the same rule.
+    text = " ".join(source().split())
+    assert "conflict alone is not a reason to Hold" in text or \
+        "Conflicting arguments alone are not a reason to Hold" in text
+    assert "materially conflicting" not in text
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("written", ["150-160", "150 to 160", "around 150", "150/160", "~150"])
+def test_a_price_written_as_a_range_drops_only_that_field(written):
+    """Anything that is not a single number becomes None. Letting it through
+    fails the whole proposal's validation, and the run falls back to free text,
+    losing every other field the model got right.
+
+    Upstream pins this on PortfolioDecision.price_target; in this fork it holds
+    for the Trader's proposal only (see the fail-closed tests below)."""
+    proposal = TraderProposal(action=TraderAction.BUY, reasoning="r",
+                              entry_price=written, stop_loss="172")
+    assert proposal.entry_price is None
+    assert proposal.stop_loss == 172.0
+    assert proposal.action is TraderAction.BUY
+
+
+# ---------------------------------------------------------------------------
+# Portfolio Manager plan numbers: fail-closed (fork, AlphaPulse contract)
+#
+# Inverts upstream's expectation for PortfolioDecision (a range or a formatted
+# price salvaged into None / a number). AlphaPulse turns the PM's plan into
+# order drafts from the TRADE_PLAN_JSON line (auto-execution included), and
+# there a null is not "unknown": a missing band trades at the current price with
+# the band gate off, a missing stop means no stop, a missing price_target drops
+# the take-profit, and a separator-stripped number is a different number
+# ('1,5' -> 15.0, '11.500,00' -> 11.5). So a number pydantic cannot read as one
+# plain number must fail the whole decision: the structured call falls back to
+# free text, main.py prints no plan line, and AlphaPulse stores 'unparsed' with
+# zero drafts. Only placeholders mean "not provided" (#1058, tested above).
+# ---------------------------------------------------------------------------
+
+_UNREADABLE_PLAN_NUMBERS = ["150-160", "150 to 160", "around 150", "150/160", "~150",
+                            "$1,150.25", "12,050원", "₩12,050", "15%", "1,5", "11.500,00"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("field", ["price_target", "stop_loss", "total_weight_pct"])
+@pytest.mark.parametrize("written", _UNREADABLE_PLAN_NUMBERS)
+def test_an_unreadable_plan_number_fails_the_whole_decision(field, written):
+    with pytest.raises(ValidationError):
+        PortfolioDecision(rating=PortfolioRating.BUY, executive_summary="s",
+                          investment_thesis="t", **{field: written})
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("build", [
+    pytest.param(lambda v: Tranche(seq=1, pct=100, trigger="immediate", price_low=v),
+                 id="Tranche.price_low"),
+    pytest.param(lambda v: Tranche(seq=1, pct=100, trigger="immediate", price_high=v),
+                 id="Tranche.price_high"),
+    pytest.param(lambda v: TrancheTrigger(kind="stop", price=v), id="TrancheTrigger.price"),
+    pytest.param(lambda v: TrancheTrigger(kind="trailing", trail_pct=v),
+                 id="TrancheTrigger.trail_pct"),
+    pytest.param(lambda v: TrancheTrigger(kind="stop", reference_price=v),
+                 id="TrancheTrigger.reference_price"),
+    pytest.param(lambda v: ExitTarget(kind="weight", remaining_weight_pct=v),
+                 id="ExitTarget.remaining_weight_pct"),
+    pytest.param(lambda v: KillSwitch(price=v, condition="c"), id="KillSwitch.price"),
+])
+@pytest.mark.parametrize("written", ["12,050원", "3%", "1,5", "150-160"])
+def test_an_unreadable_number_inside_the_plan_fails_it(build, written):
+    with pytest.raises(ValidationError):
+        build(written)
+
+
+@pytest.mark.unit
+def test_a_plan_price_that_is_a_plain_number_survives():
+    decision = PortfolioDecision(rating=PortfolioRating.BUY, executive_summary="s",
+                                 investment_thesis="t", price_target="1150.25")
+    assert decision.price_target == 1150.25
+
+
+@pytest.mark.unit
+def test_a_field_the_model_did_not_give_says_so():
+    """An omitted line and a line never asked for read the same to an analyst."""
+    from tradingagents.agents.schemas import PortfolioDecision, PortfolioRating, render_pm_decision
+
+    rendered = render_pm_decision(PortfolioDecision(
+        rating=PortfolioRating.HOLD, executive_summary="s", investment_thesis="t"))
+    assert "Price Target" in rendered and "not provided" in rendered.lower()
+
+
+@pytest.mark.unit
+def test_the_trader_names_the_levels_it_did_not_give():
+    from tradingagents.agents.schemas import TraderAction, TraderProposal, render_trader_proposal
+
+    rendered = render_trader_proposal(TraderProposal(action=TraderAction.HOLD, reasoning="r"))
+    for field in ("Entry Price", "Stop Loss", "Position Sizing"):
+        assert field in rendered
+    assert rendered.lower().count("not provided") == 3

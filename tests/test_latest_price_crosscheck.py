@@ -8,12 +8,12 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-import tradingagents.dataflows.market_data_validator as validator
+import tradingagents.dataflows.vendors.yahoo.snapshot as validator
 
 
 def _patch_av(monkeypatch, result):
     monkeypatch.setattr(
-        "tradingagents.dataflows.alpha_vantage_stock.get_latest_close_on_or_before",
+        "tradingagents.dataflows.vendors.alpha_vantage.stock.get_latest_close_on_or_before",
         lambda symbol, on_or_before: result,
     )
 
@@ -50,7 +50,7 @@ class TestCrosscheckHelper:
         def boom(*a, **k):
             raise RuntimeError("network down")
         monkeypatch.setattr(
-            "tradingagents.dataflows.alpha_vantage_stock.get_latest_close_on_or_before", boom
+            "tradingagents.dataflows.vendors.alpha_vantage.stock.get_latest_close_on_or_before", boom
         )
         assert validator._latest_price_crosscheck("GOOG", "2026-06-05", "2026-06-03", 355.68) == ""
 
@@ -76,7 +76,7 @@ class TestCrosscheckInSnapshot:
             "Date": dates, "Open": closes, "High": closes, "Low": closes,
             "Close": closes, "Volume": [1_000_000] * len(dates),
         })
-        monkeypatch.setattr(validator, "load_ohlcv", lambda s, d: df)
+        monkeypatch.setattr(validator, "load_ohlcv", lambda s, d, fill_gaps=True: df)
         _patch_av(monkeypatch, ("2026-06-04", 369.36))
         snap = validator.build_verified_market_snapshot("GOOG", "2026-06-05")
         assert "Latest-price cross-check (Alpha Vantage)" in snap
@@ -93,20 +93,24 @@ class TestAlphaVantageFetch:
             "2026-06-02,363.16,369.79,355.00,358.39,34648600\n"
         )
         monkeypatch.setattr(
-            "tradingagents.dataflows.alpha_vantage_stock._make_api_request",
+            "tradingagents.dataflows.vendors.alpha_vantage.stock._make_api_request",
             lambda fn, params: csv,
         )
-        from tradingagents.dataflows.alpha_vantage_stock import get_latest_close_on_or_before
+        from tradingagents.dataflows.vendors.alpha_vantage.stock import (
+            get_latest_close_on_or_before,
+        )
         assert get_latest_close_on_or_before("GOOG", "2026-06-05") == ("2026-06-04", 369.36)
         # historical cutoff excludes 06-04 -> 06-03 (look-ahead safe)
         assert get_latest_close_on_or_before("GOOG", "2026-06-03") == ("2026-06-03", 355.68)
 
     def test_none_when_empty_response(self, monkeypatch):
         monkeypatch.setattr(
-            "tradingagents.dataflows.alpha_vantage_stock._make_api_request",
+            "tradingagents.dataflows.vendors.alpha_vantage.stock._make_api_request",
             lambda fn, params: "",
         )
-        from tradingagents.dataflows.alpha_vantage_stock import get_latest_close_on_or_before
+        from tradingagents.dataflows.vendors.alpha_vantage.stock import (
+            get_latest_close_on_or_before,
+        )
         assert get_latest_close_on_or_before("GOOG", "2026-06-05") is None
 
 
@@ -114,18 +118,22 @@ class TestAlphaVantageFetch:
 class TestCrosscheckEdgeCases:
     def test_fetch_none_when_close_column_missing(self, monkeypatch):
         monkeypatch.setattr(
-            "tradingagents.dataflows.alpha_vantage_stock._make_api_request",
+            "tradingagents.dataflows.vendors.alpha_vantage.stock._make_api_request",
             lambda fn, params: "timestamp,open,high,low,volume\n2026-06-04,1,2,3,4\n",
         )
-        from tradingagents.dataflows.alpha_vantage_stock import get_latest_close_on_or_before
+        from tradingagents.dataflows.vendors.alpha_vantage.stock import (
+            get_latest_close_on_or_before,
+        )
         assert get_latest_close_on_or_before("GOOG", "2026-06-05") is None
 
     def test_fetch_none_when_all_rows_after_cutoff(self, monkeypatch):
         monkeypatch.setattr(
-            "tradingagents.dataflows.alpha_vantage_stock._make_api_request",
+            "tradingagents.dataflows.vendors.alpha_vantage.stock._make_api_request",
             lambda fn, params: "timestamp,open,high,low,close,volume\n2026-06-10,1,2,3,400.0,5\n",
         )
-        from tradingagents.dataflows.alpha_vantage_stock import get_latest_close_on_or_before
+        from tradingagents.dataflows.vendors.alpha_vantage.stock import (
+            get_latest_close_on_or_before,
+        )
         assert get_latest_close_on_or_before("GOOG", "2026-06-05") is None
 
     def test_pct_diff_exactly_half_percent_is_confirmed(self, monkeypatch):

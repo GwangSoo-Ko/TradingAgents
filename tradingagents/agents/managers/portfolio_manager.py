@@ -10,13 +10,14 @@ back gracefully to free-text generation.
 
 from __future__ import annotations
 
-from tradingagents.agents.schemas import PortfolioDecision, render_pm_decision
-from tradingagents.agents.utils.agent_utils import (
+from tradingagents.agents.context import (
     build_position_block,
     get_instrument_context_from_state,
     get_language_instruction,
+    get_portfolio_context_from_state,
 )
-from tradingagents.agents.utils.structured import (
+from tradingagents.agents.schemas import PortfolioDecision, render_pm_decision
+from tradingagents.agents.structured import (
     NO_EXTERNAL_TOOLS,
     bind_structured,
     invoke_structured_or_freetext,
@@ -28,6 +29,7 @@ def create_portfolio_manager(llm):
 
     def portfolio_manager_node(state) -> dict:
         instrument_context = get_instrument_context_from_state(state)
+        portfolio_context = get_portfolio_context_from_state(state)
 
         history = state["risk_debate_state"]["history"]
         risk_debate_state = state["risk_debate_state"]
@@ -44,12 +46,20 @@ def create_portfolio_manager(llm):
         # unbiased ground on purpose. Empty string when nothing was injected, so
         # the heading disappears with it.
         position_block = build_position_block(state)
+        # One account section, never two: AlphaPulse's position_context (holdings
+        # plus the Founding Thesis, PM-only) when it was injected, otherwise the
+        # caller portfolio or its "not provided" notice. That notice is '' when
+        # the caller switched it off (portfolio_notice_when_absent), and then the
+        # section disappears exactly as it does with no position_context.
+        account_block = position_block or (
+            f"{portfolio_context}\n" if portfolio_context else ""
+        )
 
         prompt = f"""As the Portfolio Manager, synthesize the risk analysts' debate and deliver the final trading decision.
 
 {instrument_context}
 
-{position_block}
+{account_block}
 ---
 
 **Rating Scale** (use exactly one):
@@ -68,7 +78,18 @@ def create_portfolio_manager(llm):
 
 ---
 
-Be decisive and ground every conclusion in specific evidence from the analysts.
+Ground every conclusion in specific evidence from the analysts. The risk debate always contains conflicting stances; deciding which is stronger is the job, so conflict alone is not a reason to Hold. Commit to the stronger case, sized by how decisively it wins. Choose Hold only when the evidence is still balanced after that weighing, or too thin to support a call; do not force a direction to appear decisive. Weigh the analysts on their merits, independent of speaking order.
+
+## Output
+
+Write these sections, in this order, starting with the rating on its own line:
+
+- **Rating**: exactly one of Buy / Overweight / Hold / Underweight / Sell
+- **Executive Summary**: the call and how to act on it
+- **Investment Thesis**: the evidence that decided it, and what would change it
+- **Price Target** and **Time Horizon**, when you can state them
+- The execution plan, whenever the rating calls for a trade: **Position Size** (`total_weight_pct`: the percent of NAV to build up to, for Buy/Overweight), **Stop Loss** (`stop_loss`), **Entry Plan** (`tranches`: each slice's share of the move, its price band and its trigger), **Exit Target** (`exit_target`: what an Underweight/Sell reduces the position to) and **Kill Switch** (`kill_switch`: the full-exit condition)
+- **Revision** (`revision`): only when the account section above shows the plan this position was opened on and this rating leaves the buy side (Buy/Overweight): which of new_information / price_action / thesis_error / tactical applies, and what specifically changed since that plan
 
 {NO_EXTERNAL_TOOLS}{get_language_instruction()}"""
 

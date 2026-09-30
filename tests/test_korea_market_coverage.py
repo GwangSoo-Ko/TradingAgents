@@ -13,8 +13,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from tradingagents.agents.utils.agent_utils import build_instrument_context
-from tradingagents.dataflows.stocktwits import fetch_stocktwits_messages
+from tradingagents.agents.context import build_instrument_context
+from tradingagents.dataflows.vendors.stocktwits import fetch_stocktwits_messages
 
 
 @pytest.mark.unit
@@ -89,7 +89,7 @@ class TestNameTickerDisplay:
     def test_display_label(self):
         from unittest.mock import patch
 
-        import tradingagents.agents.utils.agent_utils as au
+        import tradingagents.agents.context as au
         with patch.object(au, "resolve_instrument_identity",
                           return_value={"company_name": "Apple Inc."}):
             assert au.instrument_display_label("AAPL") == "Apple Inc. (AAPL)"
@@ -125,7 +125,7 @@ class TestNewsDateWindowFallback:
     coverage is sparse, never future-dated (look-ahead safety)."""
 
     def _patch(self, monkeypatch, articles):
-        import tradingagents.dataflows.yfinance_news as yn
+        import tradingagents.dataflows.vendors.yahoo.news as yn
         monkeypatch.setattr(yn, "_extract_article_data", lambda a: a)
         monkeypatch.setattr(yn, "yf_retry", lambda f: f())
         stock = SimpleNamespace(get_news=lambda count: articles)
@@ -151,10 +151,10 @@ class TestNewsDateWindowFallback:
         #
         # Regression: the pre-window test truncated the offset
         # (``pub_date.replace(tzinfo=None)`` -> 03-01 08:00, "not older than
-        # start") while ``_in_news_window`` converted it (-> 02-28 23:00Z,
-        # "outside"), so the article fell between both nets and was dropped by
-        # the branch commented ``future-dated: drop`` -- despite being in the
-        # past. Korean morning news on day one of a window vanished entirely.
+        # start") while the window check (``in_window``) converted it (-> 02-28
+        # 23:00Z, "outside"), so the article fell between both nets and was
+        # dropped as if future-dated -- despite being in the past. Korean
+        # morning news on day one of a window vanished entirely.
         kst = timezone(timedelta(hours=9))
         articles = [
             {"pub_date": datetime(2026, 3, 1, 8, 0, tzinfo=kst), "title": "SeoulMorning",
@@ -166,9 +166,52 @@ class TestNewsDateWindowFallback:
         assert "BEFORE the window" in out  # correctly labeled, not silently dropped
 
     def test_no_articles_at_all_returns_none_message(self, monkeypatch):
+        # An empty feed never observed this past window, so it is reported as
+        # unavailable rather than as "no news happened" (upstream coverage_gap).
         yn = self._patch(monkeypatch, [])
         out = yn.get_news_yfinance("005930.KS", "2026-03-01", "2026-03-07")
-        assert "No news found" in out
+        assert "unavailable" in out and "not an absence" in out
+        assert "###" not in out  # no fabricated article body
+
+    def test_empty_window_gives_the_verdict_then_the_older_context(self, monkeypatch):
+        # Coverage reaches back past the window start, so the empty window is a
+        # real absence: the verdict comes first and the pre-window articles
+        # follow as clearly labeled context.
+        articles = [
+            {"pub_date": datetime(2026, 2, 20), "title": "OlderA", "publisher": "P", "summary": "s", "link": "l"},
+        ]
+        yn = self._patch(monkeypatch, articles)
+        out = yn.get_news_yfinance("005930.KS", "2026-03-01", "2026-03-07")
+        assert out.startswith("No news found for 005930.KS between 2026-03-01 and 2026-03-07")
+        assert "unavailable" not in out
+        assert out.index("No news found") < out.index("BEFORE the window") < out.index("OlderA")
+
+    def test_undated_article_never_leaks_into_a_historical_window(self, monkeypatch):
+        # A backtest can't prove an undated article predates its as-of date, so
+        # it must not be surfaced -- neither in the window nor as pre-window
+        # context (#992/#1007). The pre-window branch once let it through.
+        articles = [
+            {"pub_date": None, "title": "UndatedX", "publisher": "P", "summary": "s", "link": "l"},
+            {"pub_date": datetime(2026, 3, 3), "title": "InWindow", "publisher": "P", "summary": "s", "link": "l"},
+            {"pub_date": datetime(2026, 2, 20), "title": "OlderA", "publisher": "P", "summary": "s", "link": "l"},
+        ]
+        yn = self._patch(monkeypatch, articles)
+        out = yn.get_news_yfinance("005930.KS", "2026-03-01", "2026-03-07")
+        assert "InWindow" in out and "OlderA" in out
+        assert "UndatedX" not in out
+
+    def test_undated_article_is_kept_in_a_live_window(self, monkeypatch):
+        # A window reaching the present can't hold a future article, so an
+        # undated one is kept there.
+        today = datetime.now(timezone.utc).date()
+        articles = [
+            {"pub_date": None, "title": "UndatedLive", "publisher": "P", "summary": "s", "link": "l"},
+        ]
+        yn = self._patch(monkeypatch, articles)
+        out = yn.get_news_yfinance(
+            "005930.KS", (today - timedelta(days=7)).isoformat(), today.isoformat()
+        )
+        assert "UndatedLive" in out
 
 
 @pytest.mark.unit
@@ -177,7 +220,7 @@ class TestDerivedFundamentals:
     Yahoo omits them for KR tickers; leave US tickers untouched."""
 
     def _patch(self, monkeypatch, info, bs=None):
-        import tradingagents.dataflows.y_finance as yf_mod
+        import tradingagents.dataflows.vendors.yahoo.fundamentals as yf_mod
         monkeypatch.setattr(yf_mod, "normalize_symbol", lambda s: s)
         monkeypatch.setattr(yf_mod, "yf_retry", lambda f: f())
         ticker_obj = SimpleNamespace(info=info, quarterly_balance_sheet=bs)
@@ -201,9 +244,14 @@ class TestDerivedFundamentals:
         yf_mod = self._patch(monkeypatch, info, bs)
         out = yf_mod.get_fundamentals("005930.KS")
         assert "Reporting currency: KRW" in out
-        assert "EPS (TTM):" in out and "(derived)" in out
-        assert "PE Ratio (TTM):" in out
-        assert "Book Value:" in out and "Price to Book:" in out
+        assert "EPS (TTM): 14457.14 (derived)" in out
+        assert "PE Ratio (TTM): 24.14 (derived)" in out
+        # Book value comes from the balance sheet: a silently failed lookup would
+        # still print both labels, as "N/A (vendor)".
+        assert "Book Value: 71836.92 (derived)" in out
+        assert "Price to Book: 4.86 (derived)" in out
+        assert "N/A (vendor)" not in out
+        assert "Data retrieved on" not in out  # no wall-clock stamp on the live path (#1300)
 
     def test_kr_underivable_marks_na(self, monkeypatch):
         # KOSDAQ name where even inputs are missing -> N/A (vendor), not dropped.

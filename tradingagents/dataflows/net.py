@@ -1,19 +1,56 @@
-"""Shared HTTPS helper for the stdlib-``urllib`` data vendors (reddit, stocktwits).
+"""HTTP helpers shared by the vendors.
 
-macOS Python.framework installs ship without a linked OpenSSL CA bundle, so the
-default ``ssl`` context can't verify certificates and every ``urlopen`` to an
-HTTPS host fails with ``CERTIFICATE_VERIFY_FAILED``. ``requests``-based vendors
-(yfinance, Alpha Vantage, …) are unaffected because ``requests`` bundles certifi.
-The stdlib-``urllib`` vendors have no such fallback, so build their TLS context
-from certifi's bundle explicitly. certifi is already a transitive dependency
-(via ``requests``/``yfinance``); if it is somehow absent we fall back to the OS
-default rather than fail hard.
+``get_scrubbed`` / ``vendor_reachable`` serve the ``requests``-based vendors.
+``default_ssl_context`` serves the stdlib-``urllib`` vendors (reddit,
+stocktwits): macOS Python.framework installs ship without a linked OpenSSL CA
+bundle, so the default ``ssl`` context can't verify certificates and every
+``urlopen`` to an HTTPS host fails with ``CERTIFICATE_VERIFY_FAILED``.
+``requests`` bundles certifi; ``urllib`` has no such fallback, so build its TLS
+context from certifi's bundle explicitly. certifi is already a transitive
+dependency (via ``requests``/``yfinance``); if it is somehow absent we fall back
+to the OS default rather than fail hard.
 """
 
 from __future__ import annotations
 
 import functools
 import ssl
+
+import requests
+
+
+def get_scrubbed(url: str, *, params: dict, timeout: float, secret: str, passthrough=()):
+    """``requests.get`` plus ``raise_for_status``, with ``secret`` kept out of errors.
+
+    Vendors that authenticate with a query parameter put the key in the URL, and
+    requests quotes the full URL in HTTP, connection and timeout errors, so any
+    log or traceback that records one would carry the key (#1324). A requests
+    error is re-raised as the same class with the key replaced and nothing
+    attached: no request or response (both hold the URL) and no exception chain,
+    which is why this raises after the ``except`` block rather than inside it.
+    Statuses in ``passthrough`` are returned for the caller to handle.
+    """
+    try:
+        response = requests.get(url, params=params, timeout=timeout)
+        if response.status_code not in passthrough:
+            response.raise_for_status()
+        return response
+    except requests.RequestException as exc:
+        error = type(exc)(str(exc).replace(secret, "***")) if secret else exc
+    raise error
+
+
+def vendor_reachable(url: str, timeout: float = 5.0) -> bool:
+    """Whether the vendor answers at all, for telling silence from an outage.
+
+    A client that returns an empty result instead of raising leaves those two
+    cases indistinguishable. Called only when a result is empty.
+    """
+    try:
+        requests.head(url, timeout=timeout, allow_redirects=True)
+        return True
+    except requests.RequestException:
+        return False
 
 
 @functools.lru_cache(maxsize=1)

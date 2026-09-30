@@ -70,6 +70,12 @@ def build_config() -> dict:
         # Naver 종목토론방 retail sentiment (KR tickers only; one HTTP GET,
         # degrades to a placeholder on failure — never blocks the node).
         "enable_kr_discussion_sentiment": True,
+        # This runner never passes a portfolio: the account context reaches the
+        # Portfolio Manager only, through TRADINGAGENTS_POSITION_CONTEXT. Without
+        # this, every Trader / risk-debater prompt (and the PM's, when no position
+        # is injected) would gain upstream's "Portfolio context: not provided"
+        # notice that the consumer's prompts never carried.
+        "portfolio_notice_when_absent": False,
         "role_models": {                     # override the two deep judges -> Opus / max
             "research_manager": {
                 "provider": "vertex_anthropic", "model": "claude-opus-5",
@@ -95,7 +101,15 @@ def main(argv=None) -> None:
         config=config,
     )
     final_state, decision = ta.propagate(args.ticker, args.date)
-    print(decision)
+    plan_obj = final_state.get("portfolio_decision_obj")
+    # The decision line is the Portfolio Manager's typed rating whenever its
+    # structured call succeeded -- the same value as TRADE_PLAN_JSON.rating below.
+    # Re-reading it from the rendered markdown could pick up another rating the
+    # prose quotes (a founding rating, a revision note). ``.value`` keeps the bare
+    # word: an Enum formats as 'PortfolioRating.SELL' on Python 3.11. Without a
+    # typed decision (free-text fallback) it is the parsed signal, REVIEW when no
+    # rating can be read.
+    print(plan_obj.rating.value if plan_obj is not None else decision)
     # Machine-readable trade plan for downstream callers that run this as a
     # subprocess and parse stdout. The known consumer is AlphaPulse
     # (alphapulse/webapp/services/trade_plan.py), which turns this into order
@@ -106,20 +120,23 @@ def main(argv=None) -> None:
     # structured call fell back to free text -- "no plan" is a valid state and
     # the consumer must not invent one. executive_summary/investment_thesis are
     # already in the saved report, so they are excluded to keep the line small.
-    plan_obj = final_state.get("portfolio_decision_obj")
     if plan_obj is not None:
         print("TRADE_PLAN_JSON: " + plan_obj.model_dump_json(
             exclude={"executive_summary", "investment_thesis"},
         ))
-    # Write the CLI's rich-header report tree: per-section 1_analysts..5_portfolio
-    # markdown plus a consolidated complete_report.md whose header carries the
-    # resolved company label and a per-role model table. Reuse the CLI writer so
-    # the on-disk output matches `tradingagents` exactly (needs the `config`).
-    from cli.main import save_report_to_disk
-    from tradingagents.dataflows.utils import safe_ticker_component
+    # Write the report tree: per-section 1_analysts..5_portfolio markdown plus a
+    # consolidated complete_report.md, through the writer the CLI uses, with the
+    # CLI's rich header (the resolved company label and a per-role model table
+    # rendered from `config`). Imported only here, after the run; main.py does
+    # not import cli.main (the interactive app).
+    from cli.report_meta import build_report_header
+    from tradingagents.dataflows.symbols import safe_ticker_component
+    from tradingagents.reporting import write_report_tree
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     save_path = Path(config["results_dir"]) / "reports" / f"{safe_ticker_component(args.ticker)}_{stamp}"
-    report_path = save_report_to_disk(final_state, args.ticker, save_path, config)
+    report_path = write_report_tree(
+        final_state, args.ticker, save_path, header=build_report_header(args.ticker, config),
+    )
     print(f"Report saved: {report_path}")
 
 

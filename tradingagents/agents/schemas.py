@@ -31,6 +31,51 @@ _NULLISH_FLOAT = {"", "none", "n/a", "na", "null", "nil", "-", "tbd", "unknown"}
 
 
 def _coerce_optional_float(value):
+    """Normalise an LLM-written optional numeric field before validation.
+
+    Three shapes show up in practice: a placeholder string ("None", "N/A") in
+    place of an omitted value (#1058); a percentage where a price was asked for
+    ("15%", #1288); and a human-formatted price ("$1,234.50"). A percentage
+    cannot be salvaged into an absolute level -- reading "15%" as 15 would put a
+    stop at $15 on a $600 stock -- so it is dropped like a placeholder, leaving
+    one bad field to null out instead of failing the whole proposal. A formatted
+    price is reduced to its number.
+
+    Anything that is not a single number is dropped the same way. A range
+    ("150-160") or a hedge ("around 150") would otherwise reach pydantic, fail
+    validation, and discard the whole decision, losing every field the model got
+    right along with the price.
+    """
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if text.lower() in _NULLISH_FLOAT or text.endswith("%"):
+        return None
+    cleaned = text.replace(",", "").lstrip("$€£¥").strip()
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _coerce_plan_float(value):
+    """Placeholder -> None; anything else goes to pydantic unchanged.
+
+    Used for every number of the Portfolio Manager's plan: ``price_target``,
+    ``total_weight_pct``, ``stop_loss`` and the numbers inside ``tranches``,
+    their ``triggers``, ``exit_target`` and ``kill_switch``. AlphaPulse reads
+    them from the ``TRADE_PLAN_JSON`` line as executable levels, where a null is
+    not "unknown": a missing band trades at the current price with the band gate
+    off, a missing stop means no stop, and a separator-stripped number is just a
+    different number ('1,5' -> 15.0, '11.500,00' -> 11.5). So these fields stay
+    all-or-nothing: only a placeholder means "not provided" (#1058), and a value
+    pydantic cannot read as one plain number ('12,050원', '3%', '150-160')
+    fails validation, the structured call falls back to free text, and no plan
+    is printed (AlphaPulse stores 'unparsed' and drafts nothing).
+
+    Upstream's salvaging ``_coerce_optional_float`` stays on the Trader's
+    proposal, whose levels are context for the debate and never traded on.
+    """
     if isinstance(value, str) and value.strip().lower() in _NULLISH_FLOAT:
         return None
     return value
@@ -82,9 +127,10 @@ class ResearchPlan(BaseModel):
     recommendation: PortfolioRating = Field(
         description=(
             "The investment recommendation. Exactly one of Buy / Overweight / "
-            "Hold / Underweight / Sell. Reserve Hold for situations where the "
-            "evidence on both sides is genuinely balanced; otherwise commit to "
-            "the side with the stronger arguments."
+            "Hold / Underweight / Sell. Conflicting arguments alone are not a "
+            "reason to Hold: commit to the stronger side, sized by how "
+            "decisively it wins. Choose Hold only when the evidence is still "
+            "balanced after weighing, or too thin to support a call."
         ),
     )
     rationale: str = Field(
@@ -97,7 +143,9 @@ class ResearchPlan(BaseModel):
     strategic_actions: str = Field(
         description=(
             "Concrete steps for the trader to implement the recommendation, "
-            "including position sizing guidance consistent with the rating."
+            "including sizing guidance relative to a standard allocation. The "
+            "research team does not see the caller's holdings; the trader and "
+            "portfolio manager apply the actual position."
         ),
     )
 
@@ -138,11 +186,19 @@ class TraderProposal(BaseModel):
     )
     entry_price: float | None = Field(
         default=None,
-        description="Optional entry price target in the instrument's quote currency.",
+        description=(
+            "Optional entry price target as an absolute number in the instrument's "
+            "quote currency (e.g. 189.5), never a percentage or a range. Omit it "
+            "if you cannot state a specific level."
+        ),
     )
     stop_loss: float | None = Field(
         default=None,
-        description="Optional stop-loss price in the instrument's quote currency.",
+        description=(
+            "Optional stop-loss as an absolute price in the instrument's quote "
+            "currency (e.g. 172.0), never a percentage. Convert a percentage "
+            "distance to the price level it implies, or omit it."
+        ),
     )
     position_sizing: str | None = Field(
         default=None,
@@ -167,12 +223,12 @@ def render_trader_proposal(proposal: TraderProposal) -> str:
         "",
         f"**Reasoning**: {proposal.reasoning}",
     ]
-    if proposal.entry_price is not None:
-        parts.extend(["", f"**Entry Price**: {proposal.entry_price}"])
-    if proposal.stop_loss is not None:
-        parts.extend(["", f"**Stop Loss**: {proposal.stop_loss}"])
-    if proposal.position_sizing:
-        parts.extend(["", f"**Position Sizing**: {proposal.position_sizing}"])
+    # Named even when absent, so a reader can tell a level the trader chose not
+    # to give from one the schema never asked for.
+    for label, value in (("Entry Price", proposal.entry_price),
+                         ("Stop Loss", proposal.stop_loss),
+                         ("Position Sizing", proposal.position_sizing)):
+        parts.extend(["", f"**{label}**: {value if value is not None and value != '' else 'not provided'}"])
     parts.extend([
         "",
         f"FINAL TRANSACTION PROPOSAL: **{proposal.action.value.upper()}**",
@@ -235,7 +291,7 @@ class TrancheTrigger(BaseModel):
     @field_validator("price", "trail_pct", "reference_price", mode="before")
     @classmethod
     def _nullish_float_to_none(cls, v):
-        return _coerce_optional_float(v)
+        return _coerce_plan_float(v)
 
 
 class ExitTarget(BaseModel):
@@ -264,7 +320,7 @@ class ExitTarget(BaseModel):
     @field_validator("remaining_weight_pct", mode="before")
     @classmethod
     def _nullish_float_to_none(cls, v):
-        return _coerce_optional_float(v)
+        return _coerce_plan_float(v)
 
 
 class KillSwitch(BaseModel):
@@ -282,7 +338,7 @@ class KillSwitch(BaseModel):
     @field_validator("price", mode="before")
     @classmethod
     def _nullish_float_to_none(cls, v):
-        return _coerce_optional_float(v)
+        return _coerce_plan_float(v)
 
 
 class Tranche(BaseModel):
@@ -328,7 +384,7 @@ class Tranche(BaseModel):
     @field_validator("price_low", "price_high", mode="before")
     @classmethod
     def _nullish_float_to_none(cls, v):
-        return _coerce_optional_float(v)
+        return _coerce_plan_float(v)
 
     @field_validator("triggers", mode="before")
     @classmethod
@@ -378,7 +434,11 @@ class PortfolioDecision(BaseModel):
     rating: PortfolioRating = Field(
         description=(
             "The final position rating. Exactly one of Buy / Overweight / Hold / "
-            "Underweight / Sell, picked based on the analysts' debate."
+            "Underweight / Sell, picked based on the analysts' debate. "
+            "Conflicting arguments alone are not a reason to Hold: commit to the "
+            "stronger side, sized by how decisively it wins. Choose Hold only "
+            "when the evidence is still balanced after weighing, or too thin to "
+            "support a call."
         ),
     )
     executive_summary: str = Field(
@@ -447,7 +507,9 @@ class PortfolioDecision(BaseModel):
     @field_validator("price_target", "total_weight_pct", "stop_loss", mode="before")
     @classmethod
     def _nullish_float_to_none(cls, v):
-        return _coerce_optional_float(v)
+        # Every plan number, price_target included: AlphaPulse's exit engine takes
+        # it as the take-profit level, so it is fail-closed like the rest.
+        return _coerce_plan_float(v)
 
 
 def render_pm_decision(decision: PortfolioDecision) -> str:
@@ -465,10 +527,14 @@ def render_pm_decision(decision: PortfolioDecision) -> str:
         "",
         f"**Investment Thesis**: {decision.investment_thesis}",
     ]
-    if decision.price_target is not None:
-        parts.extend(["", f"**Price Target**: {decision.price_target}"])
-    if decision.time_horizon:
-        parts.extend(["", f"**Time Horizon**: {decision.time_horizon}"])
+    # Named even when absent: a missing line reads as a field nobody asked for,
+    # so a reader cannot tell "no target" from "target not reported".
+    target = decision.price_target if decision.price_target is not None else "not provided"
+    parts.extend(["", f"**Price Target**: {target}"])
+    parts.extend(["", f"**Time Horizon**: {decision.time_horizon or 'not provided'}"])
+    # The executable trade plan follows, each block only when the model filled
+    # it: a Buy has no exit target and a fresh entry no revision, so a
+    # 'not provided' line there would describe a field that does not apply.
     if decision.total_weight_pct is not None:
         parts.extend(["", f"**Position Size**: {decision.total_weight_pct}%"])
     if decision.stop_loss is not None:

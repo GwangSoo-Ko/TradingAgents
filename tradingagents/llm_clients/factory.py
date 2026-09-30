@@ -1,4 +1,6 @@
 
+from typing import Any
+
 from .base_client import BaseLLMClient
 
 
@@ -64,3 +66,95 @@ def create_llm_client(
         return OpenAIClient(model, base_url, provider=provider_lower, **kwargs)
 
     raise ValueError(f"Unsupported LLM provider: {provider}")
+
+
+def _coerce_max_retries(value):
+    """Validate an ``llm_max_retries`` value to a non-negative int.
+
+    Accepts an int or a numeric string (env vars arrive as strings). Rejects
+    booleans and negatives loudly so a misconfiguration fails at startup rather
+    than silently disabling retries.
+    """
+    if isinstance(value, bool):
+        raise ValueError(f"llm_max_retries must be an integer, not a boolean: {value!r}")
+    try:
+        n = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"llm_max_retries must be an integer, got {value!r}") from exc
+    if n < 0:
+        raise ValueError(f"llm_max_retries must be >= 0, got {n}")
+    return n
+
+
+def _coerce_max_tokens(value):
+    """Validate a ``max_tokens`` value to a positive int (env vars are strings)."""
+    if isinstance(value, bool):
+        raise ValueError(f"max_tokens must be an integer, not a boolean: {value!r}")
+    try:
+        n = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"max_tokens must be an integer, got {value!r}") from exc
+    if n <= 0:
+        raise ValueError(f"max_tokens must be > 0, got {n}")
+    return n
+
+
+def build_llm_kwargs(config: dict) -> dict[str, Any]:
+    """Keyword arguments for ``create_llm_client`` from a TradingAgents config."""
+    kwargs = {}
+    provider = config.get("llm_provider", "").lower()
+
+    if provider == "google":
+        thinking_level = config.get("google_thinking_level")
+        if thinking_level:
+            kwargs["thinking_level"] = thinking_level
+
+    elif provider == "openai":
+        reasoning_effort = config.get("openai_reasoning_effort")
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
+
+    elif provider in ("anthropic", "vertex_anthropic"):
+        effort = config.get("anthropic_effort")
+        if effort:
+            kwargs["effort"] = effort
+        # max_tokens/thinking are wired only for the Vertex Claude client
+        # (VertexAnthropicClient routes them into model_kwargs); the
+        # vendor-direct anthropic path is left untouched.
+        if provider == "vertex_anthropic":
+            max_tokens = config.get("anthropic_max_tokens")
+            if max_tokens is not None and max_tokens != "":
+                kwargs["max_tokens"] = _coerce_max_tokens(max_tokens)
+            thinking = config.get("anthropic_thinking")
+            if thinking:
+                kwargs["thinking"] = thinking
+
+    # Sampling temperature is cross-provider: forward it whenever set.
+    # float() here so a value coming from a TRADINGAGENTS_TEMPERATURE env
+    # string ("0.2") works the same as a programmatic float.
+    temperature = config.get("temperature")
+    if temperature is not None and temperature != "":
+        kwargs["temperature"] = float(temperature)
+
+    # SDK retry budget is cross-provider. Forward it only when explicitly set
+    # so each provider keeps its own default (usually 2) otherwise (#1091).
+    max_retries = config.get("llm_max_retries")
+    if max_retries is not None and max_retries != "":
+        kwargs["max_retries"] = _coerce_max_retries(max_retries)
+
+    # Output-token cap is cross-provider, but Gemini names it
+    # ``max_output_tokens``; forward under the right key when set (#1204).
+    max_tokens = config.get("max_tokens")
+    if max_tokens is not None and max_tokens != "":
+        key = "max_output_tokens" if provider == "google" else "max_tokens"
+        # A provider-specific cap set above wins. vertex_anthropic takes its cap
+        # from ``anthropic_max_tokens``, a policy value kept below ~21.3k so the
+        # non-streaming node calls stay clear of the Anthropic SDK's
+        # streaming-required guard; letting the generic setting overwrite it would
+        # let one TRADINGAGENTS_MAX_TOKENS env var silently defeat that policy.
+        # The per-role path (TradingAgentsGraph._provider_kwargs_for) never
+        # forwards the generic cap, so this guard gives both paths one meaning.
+        if key not in kwargs:
+            kwargs[key] = _coerce_max_tokens(max_tokens)
+
+    return kwargs

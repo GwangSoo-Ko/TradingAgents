@@ -18,8 +18,8 @@ import pytest
 import tradingagents.agents.analysts.sentiment_analyst as sentiment
 from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
 from tradingagents.agents.managers.research_manager import create_research_manager
+from tradingagents.agents.structured import NO_EXTERNAL_TOOLS
 from tradingagents.agents.trader.trader import create_trader
-from tradingagents.agents.utils.structured import NO_EXTERNAL_TOOLS
 
 
 def _capturing_llm(captured: dict, result):
@@ -114,6 +114,8 @@ def test_sentiment_prompt_states_constraint(monkeypatch):
     monkeypatch.setattr(sentiment, "fetch_stocktwits_messages", lambda *a, **k: "st")
     monkeypatch.setattr(sentiment, "fetch_reddit_posts", lambda *a, **k: "rd")
     monkeypatch.setattr(sentiment.get_news, "func", lambda *a, **k: "news", raising=False)
+    # The Reddit recall's company-name lookup goes through the identity resolver.
+    monkeypatch.setattr(sentiment, "resolve_instrument_identity", lambda ticker: {})
 
     captured = {}
     llm = _capturing_llm(captured, SentimentReport(

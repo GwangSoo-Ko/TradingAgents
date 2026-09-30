@@ -23,9 +23,9 @@ import re
 
 from bs4 import BeautifulSoup
 
+from .errors import NoMarketDataError
 from .kr_utils import is_kr_ticker, to_krx_code
 from .rate_limit import safe_get
-from .symbol_utils import NoMarketDataError
 
 logger = logging.getLogger(__name__)
 

@@ -3,6 +3,7 @@
 Imports main (guarded by ``if __name__ == "__main__"``) without running a graph.
 """
 import datetime
+from pathlib import Path
 
 import pytest
 
@@ -35,29 +36,56 @@ class TestMainArgs:
 
 @pytest.mark.unit
 class TestMainWritesReports:
-    def test_main_writes_rich_report_via_cli_writer(self, monkeypatch, tmp_path):
-        # main() writes the CLI's rich-header report tree (company label + a
-        # per-role model table), so it calls cli.main.save_report_to_disk WITH
-        # the run config (the config is what renders the model table).
-        import cli.main as cli_main
-        calls = {}
+    def test_main_writes_rich_report_tree_and_prints_its_path_last(
+            self, monkeypatch, tmp_path, capsys):
+        # main() writes the report tree with the CLI's rich header (company label
+        # + a per-role model table rendered from the run config) under
+        # results_dir/reports/<TICKER>_<stamp>/, and its last stdout line points
+        # at complete_report.md. Runs the real writer and header: only the graph
+        # and the company-name lookup are stubbed.
+        import tradingagents.agents.context as context
+
+        real_build_config = m.build_config
 
         class FakeGraph:
             def __init__(self, *a, **k):
                 pass
 
             def propagate(self, ticker, date):
-                return {"final_trade_decision": "Buy"}, "Buy"
-
-        def fake_save(final_state, ticker, save_path, config):
-            calls["args"] = (final_state, ticker, save_path, config)
-            return tmp_path / "complete_report.md"
+                return {
+                    "market_report": "MKT",
+                    "final_trade_decision": "**Rating**: Buy",
+                    "risk_debate_state": {"judge_decision": "**Rating**: Buy"},
+                }, "Buy"
 
         monkeypatch.setattr(m, "TradingAgentsGraph", FakeGraph)
-        monkeypatch.setattr(cli_main, "save_report_to_disk", fake_save)
+        monkeypatch.setattr(m, "build_config", lambda: {
+            **real_build_config(), "results_dir": str(tmp_path / "results")})
+        monkeypatch.setattr(context, "resolve_instrument_identity",
+                            lambda ticker: {"company_name": "Micron Technology, Inc."})
         m.main(["MU", "2026-01-15"])
 
-        fs, ticker, save_path, config = calls["args"]
-        assert ticker == "MU"
-        assert fs == {"final_trade_decision": "Buy"}
-        assert config["llm_provider"] == "vertex_anthropic"  # renders the model table
+        lines = capsys.readouterr().out.splitlines()
+        assert lines[-2] == "Buy"  # no typed plan: the parsed decision
+        assert lines[-1].startswith("Report saved: ")
+        report = Path(lines[-1][len("Report saved: "):])
+        assert report.name == "complete_report.md"
+        assert report.parent.parent == tmp_path / "results" / "reports"
+        assert report.parent.name.startswith("MU_")
+        text = report.read_text(encoding="utf-8")
+        assert text.startswith("# Trading Analysis Report: Micron Technology, Inc. (MU)\n\n"
+                               "Generated: ")
+        # The model table comes from main.build_config(): Opus judges, Sonnet elsewhere.
+        assert "| portfolio_manager | `vertex_anthropic` | `claude-opus-5` |" in text
+        assert "| trader *(tier default)* | `vertex_anthropic` | `claude-sonnet-5` |" in text
+        assert (report.parent / "1_analysts" / "market.md").read_text(encoding="utf-8") == "MKT"
+        assert (report.parent / "5_portfolio" / "decision.md").read_text(
+            encoding="utf-8") == "**Rating**: Buy"
+
+
+@pytest.mark.unit
+def test_build_config_keeps_the_portfolio_notice_out_of_the_prompts():
+    # main.py passes no portfolio; the account context reaches the Portfolio
+    # Manager only (TRADINGAGENTS_POSITION_CONTEXT). The gate keeps upstream's
+    # "Portfolio context: not provided" notice out of every prompt of its runs.
+    assert m.build_config()["portfolio_notice_when_absent"] is False

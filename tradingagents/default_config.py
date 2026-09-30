@@ -74,18 +74,17 @@ def _apply_env_overrides(config: dict) -> dict:
 
 
 DEFAULT_CONFIG = _apply_env_overrides({
-    "project_dir": os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
-    "results_dir": os.getenv("TRADINGAGENTS_RESULTS_DIR", os.path.join(_TRADINGAGENTS_HOME, "logs")),
-    "data_cache_dir": os.getenv("TRADINGAGENTS_CACHE_DIR", os.path.join(_TRADINGAGENTS_HOME, "cache")),
-    "memory_log_path": os.getenv("TRADINGAGENTS_MEMORY_LOG_PATH", os.path.join(_TRADINGAGENTS_HOME, "memory", "trading_memory.md")),
+    "results_dir": os.getenv("TRADINGAGENTS_RESULTS_DIR") or os.path.join(_TRADINGAGENTS_HOME, "logs"),
+    "data_cache_dir": os.getenv("TRADINGAGENTS_CACHE_DIR") or os.path.join(_TRADINGAGENTS_HOME, "cache"),
+    "memory_log_path": os.getenv("TRADINGAGENTS_MEMORY_LOG_PATH") or os.path.join(_TRADINGAGENTS_HOME, "memory", "trading_memory.md"),
     # Optional cap on the number of resolved memory log entries. When set,
     # the oldest resolved entries are pruned once this limit is exceeded.
     # Pending entries are never pruned. None disables rotation entirely.
     "memory_log_max_entries": None,
     # LLM settings
     "llm_provider": "openai",
-    "deep_think_llm": "gpt-5.6",
-    "quick_think_llm": "gpt-5.6-luna",
+    "deep_think_llm": "gpt-6-sol",
+    "quick_think_llm": "gpt-6-luna",
     # When None, each provider's client falls back to its own default endpoint
     # (api.openai.com for OpenAI, generativelanguage.googleapis.com for Gemini, ...).
     # The CLI overrides this per provider when the user picks one. Keeping a
@@ -98,7 +97,8 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "anthropic_effort": None,           # "high", "medium", "low"
     # Vertex Claude (vertex_anthropic) only — routed into ChatAnthropicVertex
     # model_kwargs. None => library defaults (max_tokens falls back to 4096,
-    # thinking off). See VertexAnthropicClient.get_llm / _get_provider_kwargs.
+    # thinking off). See VertexAnthropicClient.get_llm and the provider-kwargs
+    # builder (llm_clients.factory.build_llm_kwargs).
     "anthropic_max_tokens": None,       # int output cap, e.g. 8192
     "anthropic_thinking": None,         # "adaptive" | "disabled" (shorthand for {"type": ...})
     # Sampling temperature, forwarded to every provider when set. None leaves
@@ -138,6 +138,14 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # primary feed (yfinance) is lagging the most recent session's close. No-op
     # without a key. Disable via TRADINGAGENTS_AV_PRICE_CROSSCHECK=false.
     "enable_alpha_vantage_price_crosscheck": True,
+    # When the caller passes no portfolio (propagate(..., portfolio=None)), the
+    # Trader, risk debaters and Portfolio Manager are told "Portfolio context:
+    # not provided ..." so they don't size as if the book were flat. An embedder
+    # that feeds account context through its own channel (alpha-pulse: the
+    # PM-only TRADINGAGENTS_POSITION_CONTEXT block) sets this False, and then no
+    # absent-portfolio notice reaches any prompt. A supplied portfolio is always
+    # rendered either way.
+    "portfolio_notice_when_absent": True,
     # Output language for analyst reports and final decision
     # Internal agent debate stays in English for reasoning quality
     "output_language": "English",
@@ -197,6 +205,9 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # based on the ticker's exchange suffix. SPY remains the US default
     # so the reflection label keeps reading "Alpha vs SPY" for US tickers
     # while non-US tickers get their regional index automatically.
+    # Trading days after the analysis date over which a decision's outcome is
+    # measured, for reflection and for the backtest figures.
+    "holding_period_days": 5,
     "benchmark_ticker": None,
     "benchmark_map": {
         ".NS":  "^NSEI",       # NSE India (Nifty 50)
@@ -210,6 +221,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
         ".SZ":  "399001.SZ",   # Shenzhen (SZSE Component)
         ".KS":  "^KS11",       # Korea Exchange (KOSPI Composite)
         ".KQ":  "^KQ11",       # Korea Exchange (KOSDAQ Composite)
+        ".SA":  "^BVSP",       # B3 Brazil (Ibovespa)
         "":     "SPY",         # default for US-listed tickers (no suffix)
     },
 })

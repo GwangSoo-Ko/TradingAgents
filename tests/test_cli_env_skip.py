@@ -11,21 +11,23 @@ from unittest import mock
 
 import pytest
 
+import cli.selections as cli_selections
+
 
 @pytest.mark.unit
 class TestProviderDefaultUrl(unittest.TestCase):
     def test_known_providers_resolve(self):
-        from cli.utils import provider_default_url
+        from cli.prompts import provider_default_url
         self.assertEqual(provider_default_url("openai"), "https://api.openai.com/v1")
         self.assertEqual(provider_default_url("DeepSeek"), "https://api.deepseek.com")
         self.assertIsNone(provider_default_url("google"))  # uses SDK default
 
     def test_unknown_provider_returns_none(self):
-        from cli.utils import provider_default_url
+        from cli.prompts import provider_default_url
         self.assertIsNone(provider_default_url("not-a-provider"))
 
     def test_ollama_honors_base_url_env(self):
-        from cli.utils import provider_default_url
+        from cli.prompts import provider_default_url
         with mock.patch.dict(os.environ, {"OLLAMA_BASE_URL": "http://host:1234/v1"}):
             self.assertEqual(provider_default_url("ollama"), "http://host:1234/v1")
 
@@ -33,7 +35,6 @@ class TestProviderDefaultUrl(unittest.TestCase):
 @pytest.mark.unit
 class TestCliSkipsPromptsFromEnv(unittest.TestCase):
     def test_env_config_skips_llm_prompts(self):
-        import cli.main as m
 
         env = {
             "TRADINGAGENTS_LLM_PROVIDER": "openai",
@@ -42,7 +43,7 @@ class TestCliSkipsPromptsFromEnv(unittest.TestCase):
             "TRADINGAGENTS_LLM_BACKEND_URL": "https://opencode.ai/zen/go/v1",
             "TRADINGAGENTS_OUTPUT_LANGUAGE": "Japanese",
         }
-        fake_cfg = dict(m.DEFAULT_CONFIG)
+        fake_cfg = dict(cli_selections.DEFAULT_CONFIG)
         fake_cfg.update({
             "llm_provider": "openai",
             "backend_url": "https://opencode.ai/zen/go/v1",
@@ -52,19 +53,19 @@ class TestCliSkipsPromptsFromEnv(unittest.TestCase):
         })
 
         with mock.patch.dict(os.environ, env, clear=False), \
-             mock.patch.object(m, "DEFAULT_CONFIG", fake_cfg), \
-             mock.patch.object(m, "fetch_announcements", return_value=None), \
-             mock.patch.object(m, "display_announcements"), \
-             mock.patch.object(m, "get_ticker", return_value="AAPL"), \
-             mock.patch.object(m, "get_analysis_date", return_value="2026-05-29"), \
-             mock.patch.object(m, "select_analysts", return_value=[]), \
-             mock.patch.object(m, "select_research_depth", return_value=1), \
-             mock.patch.object(m, "ensure_api_key") as ensure_key, \
-             mock.patch.object(m, "select_llm_provider") as prompt_provider, \
-             mock.patch.object(m, "ask_output_language") as prompt_lang, \
-             mock.patch.object(m, "select_shallow_thinking_agent") as prompt_quick, \
-             mock.patch.object(m, "select_deep_thinking_agent") as prompt_deep:
-            sel = m.get_user_selections()
+             mock.patch.object(cli_selections, "DEFAULT_CONFIG", fake_cfg), \
+             mock.patch.object(cli_selections, "fetch_announcements", return_value=None), \
+             mock.patch.object(cli_selections, "display_announcements"), \
+             mock.patch.object(cli_selections, "get_ticker", return_value="AAPL"), \
+             mock.patch.object(cli_selections, "get_analysis_date", return_value="2026-05-29"), \
+             mock.patch.object(cli_selections, "select_analysts", return_value=[]), \
+             mock.patch.object(cli_selections, "select_research_depth", return_value=1), \
+             mock.patch.object(cli_selections, "ensure_api_key") as ensure_key, \
+             mock.patch.object(cli_selections, "select_llm_provider") as prompt_provider, \
+             mock.patch.object(cli_selections, "ask_output_language") as prompt_lang, \
+             mock.patch.object(cli_selections, "select_shallow_thinking_agent") as prompt_quick, \
+             mock.patch.object(cli_selections, "select_deep_thinking_agent") as prompt_deep:
+            sel = cli_selections.get_user_selections()
 
         # None of the LLM selection prompts should have been shown.
         prompt_provider.assert_not_called()
@@ -77,38 +78,37 @@ class TestCliSkipsPromptsFromEnv(unittest.TestCase):
         # The env values flow into the returned selections.
         self.assertEqual(sel["llm_provider"], "openai")
         self.assertEqual(sel["backend_url"], "https://opencode.ai/zen/go/v1")
-        self.assertEqual(sel["shallow_thinker"], "deepseek-v4-pro")
-        self.assertEqual(sel["deep_thinker"], "kimi-k2.5")
+        self.assertEqual(sel["quick_think_llm"], "deepseek-v4-pro")
+        self.assertEqual(sel["deep_think_llm"], "kimi-k2.5")
         self.assertEqual(sel["output_language"], "Japanese")
 
 
 @pytest.mark.unit
 class TestResearchDepthSkippedFromEnv(unittest.TestCase):
     def test_both_round_envs_skip_depth_prompt(self):
-        import cli.main as m
 
         env = {
             "TRADINGAGENTS_MAX_DEBATE_ROUNDS": "2",
             "TRADINGAGENTS_MAX_RISK_ROUNDS": "4",
         }
-        fake_cfg = dict(m.DEFAULT_CONFIG)
+        fake_cfg = dict(cli_selections.DEFAULT_CONFIG)
         fake_cfg.update({"max_debate_rounds": 2, "max_risk_discuss_rounds": 4})
 
         with mock.patch.dict(os.environ, env, clear=False), \
-             mock.patch.object(m, "DEFAULT_CONFIG", fake_cfg), \
-             mock.patch.object(m, "fetch_announcements", return_value=None), \
-             mock.patch.object(m, "display_announcements"), \
-             mock.patch.object(m, "get_ticker", return_value="AAPL"), \
-             mock.patch.object(m, "get_analysis_date", return_value="2026-05-29"), \
-             mock.patch.object(m, "select_analysts", return_value=[]), \
-             mock.patch.object(m, "select_research_depth") as prompt_depth, \
-             mock.patch.object(m, "ensure_api_key"), \
-             mock.patch.object(m, "select_llm_provider", return_value=("openai", None)), \
-             mock.patch.object(m, "ask_output_language", return_value="English"), \
-             mock.patch.object(m, "select_shallow_thinking_agent", return_value="gpt-5.4-mini"), \
-             mock.patch.object(m, "select_deep_thinking_agent", return_value="gpt-5.5"), \
-             mock.patch.object(m, "ask_openai_reasoning_effort", return_value=None):
-            sel = m.get_user_selections()
+             mock.patch.object(cli_selections, "DEFAULT_CONFIG", fake_cfg), \
+             mock.patch.object(cli_selections, "fetch_announcements", return_value=None), \
+             mock.patch.object(cli_selections, "display_announcements"), \
+             mock.patch.object(cli_selections, "get_ticker", return_value="AAPL"), \
+             mock.patch.object(cli_selections, "get_analysis_date", return_value="2026-05-29"), \
+             mock.patch.object(cli_selections, "select_analysts", return_value=[]), \
+             mock.patch.object(cli_selections, "select_research_depth") as prompt_depth, \
+             mock.patch.object(cli_selections, "ensure_api_key"), \
+             mock.patch.object(cli_selections, "select_llm_provider", return_value=("openai", None)), \
+             mock.patch.object(cli_selections, "ask_output_language", return_value="English"), \
+             mock.patch.object(cli_selections, "select_shallow_thinking_agent", return_value="gpt-5.4-mini"), \
+             mock.patch.object(cli_selections, "select_deep_thinking_agent", return_value="gpt-5.5"), \
+             mock.patch.object(cli_selections, "ask_openai_reasoning_effort", return_value=None):
+            sel = cli_selections.get_user_selections()
 
         # The research-depth prompt is skipped; the value comes from the env config.
         prompt_depth.assert_not_called()
@@ -118,27 +118,26 @@ class TestResearchDepthSkippedFromEnv(unittest.TestCase):
 @pytest.mark.unit
 class TestReasoningEffortSkippedFromEnv(unittest.TestCase):
     def test_effort_env_skips_step8_prompt(self):
-        import cli.main as m
 
         env = {"TRADINGAGENTS_OPENAI_REASONING_EFFORT": "high"}
-        fake_cfg = dict(m.DEFAULT_CONFIG)
+        fake_cfg = dict(cli_selections.DEFAULT_CONFIG)
         fake_cfg.update({"openai_reasoning_effort": "high"})
 
         with mock.patch.dict(os.environ, env, clear=False), \
-             mock.patch.object(m, "DEFAULT_CONFIG", fake_cfg), \
-             mock.patch.object(m, "fetch_announcements", return_value=None), \
-             mock.patch.object(m, "display_announcements"), \
-             mock.patch.object(m, "get_ticker", return_value="AAPL"), \
-             mock.patch.object(m, "get_analysis_date", return_value="2026-05-29"), \
-             mock.patch.object(m, "select_analysts", return_value=[]), \
-             mock.patch.object(m, "select_research_depth", return_value=1), \
-             mock.patch.object(m, "ensure_api_key"), \
-             mock.patch.object(m, "select_llm_provider", return_value=("openai", None)), \
-             mock.patch.object(m, "ask_output_language", return_value="English"), \
-             mock.patch.object(m, "select_shallow_thinking_agent", return_value="gpt-5.4-mini"), \
-             mock.patch.object(m, "select_deep_thinking_agent", return_value="gpt-5.5"), \
-             mock.patch.object(m, "ask_openai_reasoning_effort") as prompt_effort:
-            sel = m.get_user_selections()
+             mock.patch.object(cli_selections, "DEFAULT_CONFIG", fake_cfg), \
+             mock.patch.object(cli_selections, "fetch_announcements", return_value=None), \
+             mock.patch.object(cli_selections, "display_announcements"), \
+             mock.patch.object(cli_selections, "get_ticker", return_value="AAPL"), \
+             mock.patch.object(cli_selections, "get_analysis_date", return_value="2026-05-29"), \
+             mock.patch.object(cli_selections, "select_analysts", return_value=[]), \
+             mock.patch.object(cli_selections, "select_research_depth", return_value=1), \
+             mock.patch.object(cli_selections, "ensure_api_key"), \
+             mock.patch.object(cli_selections, "select_llm_provider", return_value=("openai", None)), \
+             mock.patch.object(cli_selections, "ask_output_language", return_value="English"), \
+             mock.patch.object(cli_selections, "select_shallow_thinking_agent", return_value="gpt-5.4-mini"), \
+             mock.patch.object(cli_selections, "select_deep_thinking_agent", return_value="gpt-5.5"), \
+             mock.patch.object(cli_selections, "ask_openai_reasoning_effort") as prompt_effort:
+            sel = cli_selections.get_user_selections()
 
         # The reasoning-effort prompt is skipped; the value comes from env config.
         prompt_effort.assert_not_called()
@@ -148,25 +147,57 @@ class TestReasoningEffortSkippedFromEnv(unittest.TestCase):
 @pytest.mark.unit
 class TestVertexAnthropicPromptHelpers(unittest.TestCase):
     def test_ask_anthropic_max_tokens_parses_int(self):
-        import cli.utils as u
+        import cli.prompts as u
 
         with mock.patch.object(u.questionary, "text") as qtext:
             qtext.return_value.ask.return_value = "20000"
             self.assertEqual(u.ask_anthropic_max_tokens(), 20000)
 
     def test_ask_anthropic_max_tokens_blank_is_none(self):
-        import cli.utils as u
+        import cli.prompts as u
 
         with mock.patch.object(u.questionary, "text") as qtext:
             qtext.return_value.ask.return_value = ""
             self.assertIsNone(u.ask_anthropic_max_tokens())
 
     def test_ask_anthropic_thinking_returns_choice(self):
-        import cli.utils as u
+        import cli.prompts as u
 
         with mock.patch.object(u.questionary, "select") as qsel:
             qsel.return_value.ask.return_value = "adaptive"
             self.assertEqual(u.ask_anthropic_thinking(), "adaptive")
+
+    def test_ask_anthropic_thinking_off_is_none(self):
+        """Picking "Off" must reach the config as None (the provider default).
+
+        questionary returns a Choice's *title* when its value is None, so a menu
+        built as Choice("Off (default)", None) answered "Off (default)", which the
+        Vertex client then sent as thinking={"type": "Off (default)"}. The answer
+        here is whatever value the menu really attaches to its "Off" entry.
+        """
+        import cli.prompts as u
+
+        with mock.patch.object(u.questionary, "select") as qsel:
+            def answer_off(*_args, **kwargs):
+                off = next(c for c in kwargs["choices"] if c.title.startswith("Off"))
+                qsel.return_value.ask.return_value = off.value
+                return qsel.return_value
+
+            qsel.side_effect = answer_off
+            self.assertIsNone(u.ask_anthropic_thinking())
+
+
+@pytest.mark.unit
+def test_the_selection_flow_saves_its_answers_under_the_test_directory(tmp_path):
+    """get_user_selections() remembers the answers in cli_prefs.json (cli.prefs).
+    conftest points that file at each test's own directory, so the flows these
+    tests drive never overwrite the user's ~/.tradingagents/cli_prefs.json."""
+    from cli import prefs
+
+    prefs.save_last_run({"analysts": ["market"]})
+
+    assert prefs._PREFS_PATH.is_relative_to(tmp_path)
+    assert prefs._PREFS_PATH.exists()
 
 
 if __name__ == "__main__":

@@ -132,7 +132,7 @@ def resolve_query(query: str, llm=None, limit: int = 8) -> list[Candidate]:
 
     # Fast path: ticker-shaped input that yfinance recognises -> use directly.
     if looks_like_ticker(q):
-        from tradingagents.agents.utils.agent_utils import resolve_instrument_identity
+        from tradingagents.agents.context import resolve_instrument_identity
         ident = resolve_instrument_identity(q)
         if ident.get("company_name"):
             return [Candidate(

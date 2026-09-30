@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from tradingagents.dataflows import wisereport as wr
-from tradingagents.dataflows.symbol_utils import NoMarketDataError
+from tradingagents.dataflows.errors import NoMarketDataError
 from tradingagents.dataflows.wisereport import (
     _parse_consensus,
     _parse_financials,

@@ -32,12 +32,20 @@ class TestLooksLikeTicker:
 
 @pytest.mark.unit
 class TestResolveQuery:
+    @pytest.fixture(autouse=True)
+    def _identity_lookup_finds_nothing(self, monkeypatch):
+        # "Apple" and "samsng" are ticker-shaped, so resolve_query first asks
+        # yfinance for an identity (the direct fast path). These cases need that
+        # lookup to find nothing; stub it rather than rely on the live answer.
+        monkeypatch.setattr("tradingagents.agents.context.resolve_instrument_identity",
+                            lambda ticker: {})
+
     def test_empty_returns_empty(self):
         assert resolve_query("") == []
 
     def test_direct_ticker_fast_path(self):
         # Ticker-shaped + yfinance recognises it -> single direct candidate, no search.
-        with patch("tradingagents.agents.utils.agent_utils.resolve_instrument_identity",
+        with patch("tradingagents.agents.context.resolve_instrument_identity",
                    return_value={"company_name": "Apple Inc.", "exchange": "NMS", "quote_type": "EQUITY"}), \
              patch.object(tr, "_search_yf") as search:
             out = resolve_query("AAPL")
@@ -98,13 +106,13 @@ class TestLlmNormalize:
 @pytest.mark.unit
 class TestCliResolverLlm:
     def test_no_provider_key_returns_none(self, monkeypatch):
-        from cli.utils import _build_resolver_llm
+        from cli.prompts import _build_resolver_llm
         for k in ("OPENAI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY"):
             monkeypatch.delenv(k, raising=False)
         assert _build_resolver_llm() is None
 
     def test_uses_first_available_key(self, monkeypatch):
-        import cli.utils as u
+        import cli.prompts as u
         for k in ("OPENAI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY"):
             monkeypatch.delenv(k, raising=False)
         monkeypatch.setenv("GOOGLE_API_KEY", "x")

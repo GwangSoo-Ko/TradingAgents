@@ -14,9 +14,9 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
+from .errors import NoMarketDataError
 from .kr_utils import is_kr_ticker
 from .opendart_common import corp_code_for, dart_get
-from .symbol_utils import NoMarketDataError
 
 logger = logging.getLogger(__name__)
 

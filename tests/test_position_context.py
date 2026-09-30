@@ -8,35 +8,27 @@ langgraph StateGraph 자체를 실제로 invoke 하지는 않는다(LLM 호출 �
 - AgentState 선언 vs create_initial_state 반환 키 (langgraph silent-drop 가드)
 - Propagator.create_initial_state 가 파라미터를 그대로 실어 나르는지
 - TradingAgentsGraph._run_graph 가 실제로 position_context=_read_position_context()
-  를 호출하는지 — MagicMock propagator/graph 에 진짜 ``_run_graph`` 를 바인딩해
-  AlphaPulse 가 의존하는 그 배선 한 줄(trading_graph.py 의 create_initial_state
-  호출부)이 살아있는지를 본다
+  를 호출하는지 — MagicMock propagator/graph 에 진짜 ``_run_graph`` 와 그것이 거치는
+  ``create_run_state``/``record_decision`` 을 바인딩해 AlphaPulse 가 의존하는 그
+  배선 한 줄(trading_graph.py 의 create_initial_state 호출부)이 살아있는지를 본다
 - _read_position_context 자체의 env 파싱 계약
 """
 
+import ast
 import contextlib
 import functools
-import inspect
+import io
 import json
+import tokenize
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-import tradingagents.agents.analysts.fundamentals_analyst as fundamentals
-import tradingagents.agents.analysts.market_analyst as market
-import tradingagents.agents.analysts.news_analyst as news
-import tradingagents.agents.analysts.sentiment_analyst as sentiment
-import tradingagents.agents.analysts.social_media_analyst as social
-import tradingagents.agents.managers.research_manager as research_manager
-import tradingagents.agents.researchers.bear_researcher as bear
-import tradingagents.agents.researchers.bull_researcher as bull
-import tradingagents.agents.risk_mgmt.aggressive_debator as aggressive
-import tradingagents.agents.risk_mgmt.conservative_debator as conservative
-import tradingagents.agents.risk_mgmt.neutral_debator as neutral
-import tradingagents.agents.trader.trader as trader
+import tradingagents.agents as agents_pkg
+from tradingagents.agents.context import build_position_block
 from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
-from tradingagents.agents.utils.agent_states import AgentState
-from tradingagents.agents.utils.agent_utils import build_position_block
+from tradingagents.agents.state import AgentState
 from tradingagents.graph.propagation import Propagator
 from tradingagents.graph.trading_graph import (
     TradingAgentsGraph,
@@ -101,16 +93,28 @@ def _bind_real_run_graph(mock_graph, final_state):
 
     tests/test_memory_log.py 의 test_full_pipeline_no_regression 과 동일한
     패턴 -- LLM/그래프 컴파일 없이, propagate() 가 실제로 호출하는 그 메서드
-    본문(그리고 그 안의 create_initial_state 호출부)만 실행시킨다.
+    본문만 실행시킨다. _run_graph 는 초기 상태를 ``create_run_state`` 로 만들고
+    결정을 ``record_decision`` 으로 남기므로 그 둘도 진짜로 바인딩한다 -- MagicMock
+    이 자동 생성한 가짜가 대신 불리면 create_initial_state 호출부와 스크럽을 전혀
+    거치지 않아, 아래 배선 테스트들이 무의미하게 통과하거나 call_args 없이 실패한다.
+    정산(settle_pending)·identity 조회·as_of 계산은 스텁으로 둔다.
     """
     mock_graph.memory_log.get_past_context.return_value = ""
     mock_graph.resolve_instrument_context.return_value = ""
+    mock_graph.settle_pending.return_value = None
+    mock_graph._memory_as_of.return_value = None
     mock_graph.config = {}
     mock_graph.debug = False
     mock_graph.propagator.create_initial_state.return_value = final_state
     mock_graph.propagator.get_graph_args.return_value = {}
     mock_graph.graph.invoke.return_value = final_state
     mock_graph._run_graph = functools.partial(TradingAgentsGraph._run_graph, mock_graph)
+    mock_graph.create_run_state = functools.partial(
+        TradingAgentsGraph.create_run_state, mock_graph
+    )
+    mock_graph.record_decision = functools.partial(
+        TradingAgentsGraph.record_decision, mock_graph
+    )
     return mock_graph
 
 
@@ -263,6 +267,80 @@ def test_run_graph_does_not_scrub_the_state_the_operator_sees(monkeypatch):
     assert returned_state["final_trade_decision"] == decision
 
 
+def test_record_decision_scrubs_account_numbers_on_its_own():
+    """The CLI records through record_decision() without _run_graph, so the scrub
+    has to live in record_decision itself -- a scrub kept only in _run_graph would
+    leave the CLI's archive (and the next five same-ticker PM prompts) with the
+    raw balances."""
+    graph = MagicMock()
+    decision = "Rating: Overweight\nAdd using the 456535870 cash; we hold 2697 shares."
+
+    TradingAgentsGraph.record_decision(
+        graph, "417310.KS", "2026-08-19",
+        {"final_trade_decision": decision, "position_context": _CTX},
+    )
+
+    archived = graph.memory_log.store_decision.call_args.kwargs["final_trade_decision"]
+    assert "456535870" not in archived
+    assert "2697" not in archived
+    assert "[redacted]" in archived
+
+
+# The modules that must never see the account: every agent node but the Portfolio
+# Manager. Listed only to prove the glob scan below really covered them.
+_NON_PM_NODE_MODULES = frozenset({
+    "analysts/market_analyst.py", "analysts/sentiment_analyst.py",
+    "analysts/news_analyst.py", "analysts/fundamentals_analyst.py",
+    "researchers/bull_researcher.py", "researchers/bear_researcher.py",
+    "managers/research_manager.py", "trader/trader.py",
+    "risk_mgmt/aggressive_debator.py", "risk_mgmt/conservative_debator.py",
+    "risk_mgmt/neutral_debator.py",
+})
+_ACCOUNT_CHANNEL_NAMES = ("position_context", "build_position_block")
+
+
+def _lines_allowed_to_name_the_channel(rel: str, src: str) -> set[int] | None:
+    """Lines of ``tradingagents/agents/<rel>`` that may name the account channel.
+
+    ``None`` means the whole module (the Portfolio Manager, the one reader). The
+    state schema may only declare the channel, and context.py may only name it
+    inside ``build_position_block`` (plus exporting that name). Every other
+    module under tradingagents/agents gets no line at all.
+    """
+    if rel == "managers/portfolio_manager.py":
+        return None
+    tree = ast.parse(src)
+    allowed: set[int] = set()
+    if rel == "state.py":
+        for cls in tree.body:
+            if isinstance(cls, ast.ClassDef) and cls.name == "AgentState":
+                for node in cls.body:
+                    if (isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+                            and node.target.id == "position_context"):
+                        allowed.update(range(node.lineno, node.end_lineno + 1))
+    elif rel == "context.py":
+        for node in tree.body:
+            is_renderer = (isinstance(node, ast.FunctionDef)
+                           and node.name == "build_position_block")
+            is_export_list = isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets)
+            if is_renderer or is_export_list:
+                allowed.update(range(node.lineno, node.end_lineno + 1))
+    return allowed
+
+
+def _docstring_lines(src: str) -> set[int]:
+    """Lines holding a module/class/function docstring (prose, not a read)."""
+    lines: set[int] = set()
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            first = node.body[0] if node.body else None
+            if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+                    and isinstance(first.value.value, str)):
+                lines.update(range(first.lineno, first.end_lineno + 1))
+    return lines
+
+
 def test_only_the_portfolio_manager_reads_position_context():
     """처분 효과 차단이 코드로 지켜지는지 -- 주석이 아니라 소스로 확인한다.
 
@@ -279,13 +357,36 @@ def test_only_the_portfolio_manager_reads_position_context():
 
     소스 스캔은 '다른 필드에 실려 들어오는 보유 정보'를 볼 수 없다. 그래서
     유일한 안전한 주입 지점은 그래프의 마지막 노드인 PM 하나뿐이다.
+
+    Scanned by glob over every module under tradingagents/agents (not a fixed
+    list), so a module added or moved by an upstream sync is covered the day it
+    lands. Code counts -- names, attributes, string literals such as a state key;
+    comments and docstrings do not (prose cannot read state).
     """
-    for mod in (market, news, sentiment, social, fundamentals,
-                bull, bear, aggressive, conservative, neutral,
-                trader, research_manager):
-        src = inspect.getsource(mod)
-        assert "position_context" not in src, f"{mod.__name__} 이 보유를 읽는다"
-        assert "build_position_block" not in src, f"{mod.__name__} 이 보유를 읽는다"
+    agents_dir = Path(agents_pkg.__file__).resolve().parent
+    scanned: set[str] = set()
+    readers: list[str] = []
+    for path in sorted(agents_dir.rglob("*.py")):
+        rel = path.relative_to(agents_dir).as_posix()
+        src = path.read_text(encoding="utf-8")
+        scanned.add(rel)
+        allowed = _lines_allowed_to_name_the_channel(rel, src)
+        if allowed is None:
+            continue
+        prose = _docstring_lines(src)
+        for tok in tokenize.generate_tokens(io.StringIO(src).readline):
+            if tok.type == tokenize.COMMENT:
+                continue
+            if tok.type == tokenize.STRING and tok.start[0] in prose:
+                continue
+            if any(name in tok.string for name in _ACCOUNT_CHANNEL_NAMES) \
+                    and tok.start[0] not in allowed:
+                readers.append(f"{rel}:{tok.start[0]}: {tok.string[:80]!r}")
+
+    missing = _NON_PM_NODE_MODULES - scanned
+    assert not missing, f"스캔이 노드 모듈을 놓쳤다(이동/개명?): {sorted(missing)}"
+    assert "managers/portfolio_manager.py" in scanned
+    assert not readers, "PM 이 아닌 곳이 보유를 읽는다:\n" + "\n".join(readers)
 
 
 class _CapturingLLM:

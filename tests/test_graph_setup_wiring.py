@@ -2,8 +2,8 @@
 
 We don't run the LLMs; we assert GraphSetup requests the right role keys and
 that the graph compiles. llm_for returns a MagicMock so agent factories that
-bind tools / structured output at creation time work; tool nodes are simple
-callables so LangGraph's add_node accepts them.
+bind tools / structured output at creation time work; the tool nodes come from
+each analyst's own TOOLS, as in a real run.
 """
 from unittest.mock import MagicMock
 
@@ -29,7 +29,6 @@ def test_setup_graph_requests_each_role_and_compiles():
 
     setup = GraphSetup(
         llm_for,
-        tool_nodes={k: (lambda state: state) for k in ("market", "social", "news", "fundamentals")},
         conditional_logic=ConditionalLogic(max_debate_rounds=1, max_risk_discuss_rounds=1),
     )
     workflow = setup.setup_graph(["market", "social", "news", "fundamentals"])

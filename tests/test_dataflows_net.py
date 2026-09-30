@@ -36,7 +36,7 @@ class TestVendorWiring:
     def test_stocktwits_passes_ssl_context(self):
         from unittest.mock import patch
 
-        from tradingagents.dataflows import stocktwits
+        from tradingagents.dataflows.vendors import stocktwits
         captured = {}
 
         def fake_urlopen(req, timeout=None, context=None):
@@ -50,7 +50,7 @@ class TestVendorWiring:
     def test_reddit_passes_ssl_context(self):
         from unittest.mock import patch
 
-        from tradingagents.dataflows import reddit
+        from tradingagents.dataflows.vendors import reddit
         captured = {}
 
         def fake_urlopen(req, timeout=None, context=None):
@@ -58,5 +58,5 @@ class TestVendorWiring:
             raise OSError("stop")
 
         with patch.object(reddit, "urlopen", side_effect=fake_urlopen):
-            reddit.fetch_reddit_posts("NVDA", subreddits=("stocks",), inter_request_delay=0)
+            reddit.fetch_reddit_posts("NVDA", subreddits=("stocks",))
         assert isinstance(captured.get("context"), ssl.SSLContext)

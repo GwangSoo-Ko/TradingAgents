@@ -11,8 +11,8 @@ from unittest.mock import patch
 import pytest
 
 from tradingagents.dataflows import naver_news
+from tradingagents.dataflows.errors import NoMarketDataError
 from tradingagents.dataflows.naver_news import _flatten_items, _parse_naver_datetime, get_news
-from tradingagents.dataflows.symbol_utils import NoMarketDataError
 
 
 # A faithful sample of the real endpoint shape (list of clusters -> items).

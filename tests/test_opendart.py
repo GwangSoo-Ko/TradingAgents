@@ -9,12 +9,12 @@ import os
 import pytest
 
 from tradingagents.dataflows import opendart_common as common, opendart_fundamentals as fund
+from tradingagents.dataflows.errors import NoMarketDataError
 from tradingagents.dataflows.opendart_common import OpenDartNotConfiguredError, get_api_key
 from tradingagents.dataflows.opendart_fundamentals import (
     _latest_available_fiscal_year,
     get_fundamentals,
 )
-from tradingagents.dataflows.symbol_utils import NoMarketDataError
 
 
 def _sample_list():

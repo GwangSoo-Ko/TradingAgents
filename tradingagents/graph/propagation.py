@@ -1,11 +1,6 @@
-# TradingAgents/graph/propagation.py
-
 from typing import Any
 
-from tradingagents.agents.utils.agent_states import (
-    InvestDebateState,
-    RiskDebateState,
-)
+from tradingagents.agents.state import InvestDebateState, RiskDebateState
 
 
 class Propagator:
@@ -22,6 +17,7 @@ class Propagator:
         asset_type: str = "stock",
         past_context: str = "",
         instrument_context: str = "",
+        portfolio_context: str = "",
         position_context: str = "",
     ) -> dict[str, Any]:
         """Create the initial state for the agent graph.
@@ -31,6 +27,10 @@ class Propagator:
         ``TradingAgentsGraph.resolve_instrument_context``). When empty, agents
         fall back to ticker-only context via
         ``get_instrument_context_from_state``.
+
+        ``portfolio_context`` is the caller's rendered portfolio (``portfolio=``);
+        ``position_context`` is the account snapshot JSON from
+        ``TRADINGAGENTS_POSITION_CONTEXT``, which only the Portfolio Manager reads.
         """
         return {
             "messages": [("human", company_name)],
@@ -39,6 +39,7 @@ class Propagator:
             "instrument_context": instrument_context,
             "trade_date": str(trade_date),
             "past_context": past_context,
+            "portfolio_context": portfolio_context,
             "position_context": position_context,
             "investment_debate_state": InvestDebateState(
                 {

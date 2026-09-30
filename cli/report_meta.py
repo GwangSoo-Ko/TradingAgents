@@ -6,6 +6,7 @@ models used.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any
 
 # Pipeline order, for a readable per-role table.
@@ -84,3 +85,22 @@ def analysis_config_block(config: dict[str, Any]) -> str:
         marker = " *(tier default)*" if is_default else ""
         lines.append(f"| {role}{marker} | `{provider}` | `{model}` |")
     return "\n".join(lines) + "\n\n"
+
+
+def build_report_header(ticker: str, config: dict[str, Any] | None = None) -> str:
+    """Title block of ``complete_report.md``: ``Company Name (TICKER)``, the time it
+    was written, then (given the run config) :func:`analysis_config_block`.
+
+    Handed to ``tradingagents.reporting.write_report_tree(header=...)`` by the CLI
+    and by main.py, whose report alpha-pulse shows (title and model table). The
+    company name comes from the lru-cached identity lookup the run already made,
+    and falls back to the bare ticker when none resolves.
+    """
+    from tradingagents.agents.context import instrument_display_label
+
+    config_block = analysis_config_block(config) if config else ""
+    return (
+        f"# Trading Analysis Report: {instrument_display_label(ticker)}\n\n"
+        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        f"{config_block}"
+    )
