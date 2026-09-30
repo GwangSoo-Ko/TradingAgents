@@ -56,6 +56,22 @@ _SHARED_BUCKET = RateBucket(rate=8.0)
 DEFAULT_UA = "Mozilla/5.0 (compatible; tradingagents/0.2; +https://github.com/TauricResearch/TradingAgents)"
 
 
+def _without_secret(exc: requests.RequestException, secret: str) -> requests.RequestException:
+    """``exc`` with ``secret`` masked, as the same class and with nothing attached.
+
+    requests quotes the full URL, query string included, in HTTP, connection and
+    timeout errors, and the request/response it attaches hold the URL too -- the
+    same leak ``net.get_scrubbed`` closes for the upstream vendors (#1324).
+    """
+    if not secret:
+        return exc
+    masked = str(exc).replace(secret, "***")
+    try:
+        return type(exc)(masked)
+    except TypeError:  # a subclass with a constructor of its own
+        return requests.RequestException(masked)
+
+
 def safe_get(
     url: str,
     *,
@@ -64,6 +80,7 @@ def safe_get(
     timeout: float = 10.0,
     max_retries: int = 3,
     bucket: RateBucket | None = None,
+    secret: str = "",
 ) -> requests.Response:
     """Rate-limited GET with exponential-backoff retry on HTTP 429 / errors.
 
@@ -72,6 +89,10 @@ def safe_get(
     backoff, and raises the last exception if all attempts fail — callers in a
     vendor module let that propagate so :func:`route_to_vendor` skips to the
     next vendor.
+
+    ``secret`` is an API key sent as a query parameter (OpenDART's
+    ``crtfc_key``): it is masked in every log line and in the error raised after
+    the last attempt, which carries no exception chain for the same reason.
     """
     bucket = bucket or _SHARED_BUCKET
     hdrs = {"User-Agent": DEFAULT_UA}
@@ -91,9 +112,12 @@ def safe_get(
             resp.raise_for_status()
             return resp
         except requests.RequestException as exc:
-            last_exc = exc
+            last_exc = _without_secret(exc, secret)
             wait = (2 ** attempt) + random.uniform(0, 1)
-            logger.warning("GET %s failed (attempt %d): %s; retrying in %.1fs", url, attempt + 1, exc, wait)
+            logger.warning("GET %s failed (attempt %d): %s; retrying in %.1fs",
+                           url, attempt + 1, last_exc, wait)
             time.sleep(wait)
 
+    # Raised here, outside the except block, so a masked error carries no
+    # __context__ holding the original (unmasked) one.
     raise last_exc or RuntimeError(f"safe_get exhausted retries for {url}")

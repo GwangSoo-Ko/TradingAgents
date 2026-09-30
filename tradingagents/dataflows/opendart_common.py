@@ -67,7 +67,8 @@ def _load_corp_map() -> dict[str, str]:
 
     zip_path = _corp_code_zip_path()
     if not zip_path.exists():
-        resp = safe_get(_CORP_CODE_URL, params={"crtfc_key": get_api_key()}, timeout=30.0)
+        key = get_api_key()
+        resp = safe_get(_CORP_CODE_URL, params={"crtfc_key": key}, timeout=30.0, secret=key)
         zip_path.write_bytes(resp.content)
 
     mapping: dict[str, str] = {}
@@ -106,8 +107,10 @@ def dart_get(path: str, **params) -> dict:
     the query, which we surface as NoMarketDataError so the dispatcher can fall
     back to another vendor.
     """
+    # The key travels in the query string; safe_get masks it in its logs and in
+    # the error it raises, which the wisereport vendor and the router log again.
     params["crtfc_key"] = get_api_key()
-    resp = safe_get(f"{_BASE}/{path}", params=params, timeout=20.0)
+    resp = safe_get(f"{_BASE}/{path}", params=params, timeout=20.0, secret=params["crtfc_key"])
     data = resp.json()
     status = data.get("status")
     if status == "013":  # 조회된 데이터가 없습니다

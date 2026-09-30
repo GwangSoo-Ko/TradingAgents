@@ -93,3 +93,75 @@ class TestSafeGet:
              patch("tradingagents.dataflows.rate_limit.time.sleep"), \
              pytest.raises(rate_limit.requests.RequestException):
             safe_get("https://example.com", max_retries=2)
+
+
+_DART_KEY = "dartkey0123456789abcdef"
+
+
+def _dart_url_error(exc_type):
+    """What requests raises for OpenDART: the full URL, query string and key included."""
+    def fail(url, params=None, **kwargs):
+        raise exc_type(
+            f"HTTPSConnectionPool(host='opendart.fss.or.kr', port=443): Max retries "
+            f"exceeded with url: /api/list.json?corp_code=00126380&crtfc_key={params['crtfc_key']}"
+        )
+    return fail
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("exc_type", [
+    rate_limit.requests.ConnectionError, rate_limit.requests.HTTPError, rate_limit.requests.Timeout,
+])
+def test_the_opendart_key_stays_out_of_logs_and_errors(monkeypatch, caplog, exc_type):
+    """OpenDART authenticates with ``crtfc_key`` in the query string, and requests
+    quotes the whole URL in its errors. safe_get logged each failed attempt at
+    WARNING and re-raised the error, which wisereport and the router log again --
+    every log line carried the key (upstream closed the same leak for its vendors
+    with net.get_scrubbed, #1324)."""
+    from tradingagents.dataflows import opendart_common
+
+    monkeypatch.setenv("DART_API_KEY", _DART_KEY)
+    monkeypatch.setattr(rate_limit.requests, "get", _dart_url_error(exc_type))
+    monkeypatch.setattr(rate_limit.time, "sleep", lambda s: None)
+    caplog.set_level("DEBUG")
+
+    with pytest.raises(exc_type) as caught:
+        opendart_common.dart_get("list.json", corp_code="00126380")
+
+    assert _DART_KEY not in str(caught.value)
+    assert "crtfc_key=***" in str(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
+    assert caplog.records, "the failed attempts were not logged"
+    assert all(_DART_KEY not in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.unit
+def test_the_corp_code_download_masks_the_key_too(monkeypatch, tmp_path, caplog):
+    from tradingagents.dataflows import opendart_common
+
+    monkeypatch.setenv("DART_API_KEY", _DART_KEY)
+    monkeypatch.setattr(opendart_common, "_CORP_MAP", None)
+    monkeypatch.setattr(opendart_common, "_corp_code_zip_path", lambda: tmp_path / "corp.zip")
+    monkeypatch.setattr(rate_limit.requests, "get",
+                        _dart_url_error(rate_limit.requests.ConnectionError))
+    monkeypatch.setattr(rate_limit.time, "sleep", lambda s: None)
+    caplog.set_level("DEBUG")
+
+    with pytest.raises(rate_limit.requests.ConnectionError) as caught:
+        opendart_common._load_corp_map()
+
+    assert _DART_KEY not in str(caught.value)
+    assert all(_DART_KEY not in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.unit
+def test_a_request_without_a_secret_raises_the_original_error(monkeypatch):
+    original = rate_limit.requests.ConnectionError("boom")
+    monkeypatch.setattr(rate_limit.requests, "get",
+                        lambda *a, **k: (_ for _ in ()).throw(original))
+    monkeypatch.setattr(rate_limit.time, "sleep", lambda s: None)
+
+    with pytest.raises(rate_limit.requests.ConnectionError) as caught:
+        safe_get("https://example.com", max_retries=1)
+
+    assert caught.value is original
