@@ -46,6 +46,29 @@ def _no_network(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_curl_network(request, monkeypatch):
+    """yfinance reaches Yahoo through curl_cffi, which drives libcurl directly and
+    never opens a Python socket, so ``_no_network`` cannot stop it. The fork's
+    company-name lookups (the CLI spinner label, the sentiment analyst's Reddit
+    query) run inside upstream tests that do not stub them; refuse the request at
+    curl_cffi's own entry points instead. Those lookups fail open."""
+    if request.node.get_closest_marker("integration"):
+        return
+    try:
+        import curl_cffi
+        from curl_cffi import requests as curl_requests
+    except ImportError:
+        return
+
+    def refuse(*args, **kwargs):
+        raise OSError("test tried to reach the network through curl_cffi")
+
+    monkeypatch.setattr(curl_cffi.Curl, "perform", refuse)
+    monkeypatch.setattr(curl_requests.Session, "request", refuse)
+    monkeypatch.setattr(curl_requests.AsyncSession, "request", refuse)
+
+
+@pytest.fixture(autouse=True)
 def _own_cli_prefs(tmp_path, monkeypatch):
     """The CLI keeps the last run's selections in the user's home; tests keep theirs apart."""
     monkeypatch.setattr("cli.prefs._PREFS_PATH", tmp_path / "cli_prefs.json")
