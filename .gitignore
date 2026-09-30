@@ -226,3 +226,7 @@ __marimo__/
 
 # TradingAgents local outputs
 reports/
+
+# Consumer-side contract replays that embed another project's code: run locally
+# next to tests/alphapulse_contract/, never committed to this repository.
+tests/alphapulse_contract_private/

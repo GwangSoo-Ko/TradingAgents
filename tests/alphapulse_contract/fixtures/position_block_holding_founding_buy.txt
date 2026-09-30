@@ -1,0 +1,16 @@
+**Current Position and Account**
+- Holding: 1250 shares at an average cost of 10480.0 KRW
+- Last price: 10800.0 KRW
+- Unrealised P&L: 3.05%
+- Current weight: 2.99% of NAV
+- Cash available: 421675870.0 KRW
+- Total account NAV: 451015870.0 KRW
+
+**Founding Thesis** -- the plan this position was opened on
+- On 20260805 you rated this **Buy**, price target 11640.0 KRW, horizon 3-6개월 (다음 배당 기준일까지).
+- Entered at 10480.0 KRW on 20260806.
+- Trading days held since entry: 8.
+- That plan's own kill switch: 10240.0 KRW.
+- Most recent prior rating: Overweight.
+If today's rating leaves the buy side (Buy/Overweight), you MUST fill the `revision` field: pick new_information / price_action / thesis_error / tactical and name what specifically changed since that plan.
+Use these figures to size and direct the decision. **Do not quote the raw account numbers in your written output** -- refer to sizing in percentages of NAV. The written decision is archived and reused as context on later runs, where these balances will be stale.

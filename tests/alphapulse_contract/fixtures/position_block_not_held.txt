@@ -1,0 +1,5 @@
+**Current Position and Account**
+- This name is **not currently held**. Any plan is a fresh entry.
+- Cash available: 421675870.0 KRW
+- Total account NAV: 451015870.0 KRW
+Use these figures to size and direct the decision. **Do not quote the raw account numbers in your written output** -- refer to sizing in percentages of NAV. The written decision is archived and reused as context on later runs, where these balances will be stale.

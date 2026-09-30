@@ -1,0 +1,127 @@
+{
+  "_about": "Default HTTP routes of the harness's library-level network fakes (requests' HTTPAdapter.send and urllib's OpenerDirector.open). First rule whose every 'match' substring occurs in the full request URL wins. Bodies are 'json' (serialised on the way out), 'text', or a named 'generator'. Tokens inside strings: {{D-N|fmt}} = run trade date minus N days (strftime fmt, or 'iso' for YYYY-MM-DDT01:00:00Z, or 'epoch'), {{NOW+N|fmt}} = UTC now plus N days. A scenario's http_rules are tried before these. A URL no rule matches is answered 404 and recorded in captures.network.unrouted.",
+  "rules": [
+    {
+      "name": "naver_news_417310",
+      "match": ["m.stock.naver.com/api/news/stock/417310"],
+      "json": [
+        {"total": 3, "items": [
+          {"titleFull": "리츠 섹터, 차입금 차환 앞두고 배당 여력 점검", "title": "리츠 차환", "officeName": "연합인포맥스", "body": "만기가 돌아오는 차입금의 차환 금리가 기존 금리보다 높다는 분석이 나왔다.", "mobileNewsUrl": "https://n.news.naver.com/mnews/article/001/0000000001", "datetime": "{{D-1|%Y%m%d0930}}"},
+          {"titleFull": "상장 리츠 배당 시즌, 고배당 종목에 매수세", "title": "리츠 배당", "officeName": "한국경제", "body": "배당 기준일을 앞두고 배당수익률이 높은 리츠에 매수세가 몰렸다.", "mobileNewsUrl": "https://n.news.naver.com/mnews/article/015/0000000002", "datetime": "{{D-2|%Y%m%d1410}}"},
+          {"titleFull": "금리 결정 앞두고 리츠주 변동성 확대", "title": "리츠 변동성", "officeName": "매일경제", "body": "금리 경로를 둘러싼 전망이 엇갈리며 리츠주 등락 폭이 커졌다.", "mobileNewsUrl": "https://n.news.naver.com/mnews/article/009/0000000003", "datetime": "{{D-4|%Y%m%d0805}}"}
+        ]}
+      ]
+    },
+    {
+      "name": "naver_news_005930",
+      "match": ["m.stock.naver.com/api/news/stock/005930"],
+      "json": [
+        {"total": 3, "items": [
+          {"titleFull": "삼성전자, HBM3E 12단 공급 확대", "title": "삼성전자 HBM", "officeName": "머니투데이", "body": "하반기부터 엔비디아향 공급 물량이 늘어난다.", "mobileNewsUrl": "https://n.news.naver.com/mnews/article/008/0000000011", "datetime": "{{D-1|%Y%m%d1000}}"},
+          {"titleFull": "외국인 5거래일 연속 삼성전자 순매수", "title": "외국인 순매수", "officeName": "서울경제", "body": "누적 순매수는 1조 2천억원이다.", "mobileNewsUrl": "https://n.news.naver.com/mnews/article/011/0000000012", "datetime": "{{D-2|%Y%m%d1520}}"},
+          {"titleFull": "메모리 고정거래가격 3개월 연속 상승", "title": "메모리 가격", "officeName": "전자신문", "body": "DRAM 고정가가 전월 대비 4% 올랐다.", "mobileNewsUrl": "https://n.news.naver.com/mnews/article/030/0000000013", "datetime": "{{D-5|%Y%m%d0700}}"}
+        ]}
+      ]
+    },
+    {
+      "name": "naver_news_other_kr",
+      "match": ["m.stock.naver.com/api/news/stock/"],
+      "json": [{"total": 0, "items": []}]
+    },
+    {
+      "name": "naver_discussion",
+      "match": ["m.stock.naver.com/front-api/discussion/list"],
+      "json": {
+        "isSuccess": true,
+        "result": {"posts": [
+          {"title": "배당 보고 기준일까지 들고 간다", "contentSwReplacedButImg": "배당수익률이 이 정도면 지금 파는 건 아쉽다.", "writtenAt": "{{D-1|%Y-%m-%dT21:14:00}}", "recommendCount": 41, "notRecommendCount": 6, "replyDepth": 0, "isCleanbotPassed": true, "nickname": "harness_nick_alpha", "profileId": "harness-profile-001", "userId": "harness-user-001"},
+          {"title": "금리 오르면 리츠는 더 빠진다", "contentSwReplacedButImg": "금리 결정 전에 비중 줄이는 게 맞다고 봄", "writtenAt": "{{D-2|%Y-%m-%dT10:02:00}}", "recommendCount": 17, "notRecommendCount": 12, "replyDepth": 0, "isCleanbotPassed": true, "nickname": "harness_nick_beta", "profileId": "harness-profile-002", "userId": "harness-user-002"},
+          {"title": "ㄴ 동의합니다", "contentSwReplacedButImg": "답글", "writtenAt": "{{D-2|%Y-%m-%dT10:30:00}}", "recommendCount": 2, "notRecommendCount": 0, "replyDepth": 1, "isCleanbotPassed": true, "nickname": "harness_nick_gamma", "profileId": "harness-profile-003", "userId": "harness-user-003"}
+        ]}
+      }
+    },
+    {
+      "name": "wisereport_financials_417310",
+      "match": ["navercomp.wisereport.co.kr/v2/company/cF1002.aspx", "cmp_cd=417310"],
+      "text": "<table><tr><th>재무년월</th><th>매출액</th><th>증감</th><th>영업이익</th><th>당기순이익</th><th>EPS</th><th>PER</th><th>PBR</th><th>ROE</th><th>EV/EBITDA</th><th>순부채</th><th>기준</th></tr><tr><td>2024(A)</td><td>391</td><td>3.4</td><td>239</td><td>149</td><td>542</td><td>18.02</td><td>1.07</td><td>5.95</td><td>21.40</td><td>112.6</td><td>IFRS별도</td></tr><tr><td>2025(A)</td><td>406</td><td>3.8</td><td>248</td><td>155</td><td>564</td><td>17.91</td><td>1.10</td><td>6.03</td><td>21.02</td><td>110.9</td><td>IFRS별도</td></tr><tr><td>2026(E)</td><td>416</td><td>2.5</td><td>254</td><td>160</td><td>582</td><td>18.56</td><td>1.14</td><td>6.12</td><td>20.71</td><td>109.8</td><td>IFRS별도</td></tr></table>"
+    },
+    {
+      "name": "wisereport_main_417310",
+      "match": ["navercomp.wisereport.co.kr/v2/company/c1010001.aspx", "cmp_cd=417310"],
+      "text": "<div>투자의견 목표주가 (원) EPS (원) PER (배) 추정기관수 3.50 11,850 582 18.56 2</div>"
+    },
+    {
+      "name": "wisereport_financials_005930",
+      "match": ["navercomp.wisereport.co.kr/v2/company/cF1002.aspx", "cmp_cd=005930"],
+      "text": "<table><tr><th>재무년월</th><th>매출액</th><th>증감</th><th>영업이익</th><th>당기순이익</th><th>EPS</th><th>PER</th><th>PBR</th><th>ROE</th><th>EV/EBITDA</th><th>순부채</th><th>기준</th></tr><tr><td>2024(A)</td><td>3,008,709</td><td>16.2</td><td>327,260</td><td>344,514</td><td>4,950</td><td>10.75</td><td>0.92</td><td>9.03</td><td>3.84</td><td>-23.06</td><td>IFRS연결</td></tr><tr><td>2025(A)</td><td>3,336,059</td><td>10.9</td><td>436,011</td><td>442,610</td><td>6,564</td><td>10.85</td><td>1.07</td><td>10.85</td><td>4.13</td><td>-25.40</td><td>IFRS연결</td></tr><tr><td>2026(E)</td><td>3,612,300</td><td>8.3</td><td>512,800</td><td>468,200</td><td>6,941</td><td>10.26</td><td>1.00</td><td>10.21</td><td>3.92</td><td>-27.10</td><td>IFRS연결</td></tr></table>"
+    },
+    {
+      "name": "wisereport_main_005930",
+      "match": ["navercomp.wisereport.co.kr/v2/company/c1010001.aspx", "cmp_cd=005930"],
+      "text": "<div>투자의견 목표주가 (원) EPS (원) PER (배) 추정기관수 4.04 86,667 6,941 10.26 24</div>"
+    },
+    {
+      "name": "wisereport_other",
+      "match": ["navercomp.wisereport.co.kr/v2/company/"],
+      "text": "<html><body>데이터가 없습니다</body></html>"
+    },
+    {
+      "name": "polymarket_search",
+      "match": ["gamma-api.polymarket.com/public-search"],
+      "json": {"events": [
+        {"title": "Bank of Korea decision", "markets": [
+          {"question": "Will the Bank of Korea raise its base rate in October 2026?", "outcomes": "[\"Yes\", \"No\"]", "outcomePrices": "[\"0.27\", \"0.73\"]", "volumeNum": 1843200.5, "endDate": "{{NOW+30|%Y-%m-%dT%H:%M:%SZ}}", "closed": false, "oneWeekPriceChange": 0.04}
+        ]},
+        {"title": "Fed decision", "markets": [
+          {"question": "Fed rate cut at the next FOMC meeting?", "outcomes": "[\"Yes\", \"No\"]", "outcomePrices": "[\"0.64\", \"0.36\"]", "volumeNum": 25100300.0, "endDate": "{{NOW+45|%Y-%m-%dT%H:%M:%SZ}}", "closed": false, "oneWeekPriceChange": -0.03},
+          {"question": "Fed rate cut in June 2025?", "outcomes": "[\"Yes\", \"No\"]", "outcomePrices": "[\"0.0\", \"1.0\"]", "volumeNum": 90000000.0, "endDate": "2025-06-18T00:00:00Z", "closed": true, "oneWeekPriceChange": 0}
+        ]}
+      ]}
+    },
+    {
+      "name": "fred_series",
+      "match": ["api.stlouisfed.org/fred/series?"],
+      "json": {"seriess": [{"id": "HARNESS", "title": "Harness Macro Series", "units": "Percent", "units_short": "%", "frequency": "Monthly", "seasonal_adjustment_short": "SA"}]}
+    },
+    {
+      "name": "fred_observations",
+      "match": ["api.stlouisfed.org/fred/series/observations"],
+      "json": {"observations": [
+        {"date": "{{D-60|%Y-%m-01}}", "value": "3.10"},
+        {"date": "{{D-30|%Y-%m-01}}", "value": "3.05"},
+        {"date": "{{D-1|%Y-%m-01}}", "value": "2.98"}
+      ]}
+    },
+    {
+      "name": "alpha_vantage_daily",
+      "match": ["www.alphavantage.co/query", "function=TIME_SERIES_DAILY"],
+      "generator": "alpha_vantage_daily_csv"
+    },
+    {
+      "name": "alpha_vantage_other",
+      "match": ["www.alphavantage.co/query"],
+      "json": {"Information": "harness: this Alpha Vantage function has no fixture"}
+    },
+    {
+      "name": "stocktwits_stream",
+      "match": ["api.stocktwits.com/api/2/streams/symbol/"],
+      "json": {"response": {"status": 200}, "messages": [
+        {"id": 900001, "body": "$AAPL services margin keeps expanding, adding on dips", "created_at": "{{D-1|%Y-%m-%dT14:05:00Z}}", "entities": {"sentiment": {"basic": "Bullish"}}, "user": {"username": "harness_user_a"}},
+        {"id": 900002, "body": "$AAPL iPhone cycle priced in, trimming here", "created_at": "{{D-2|%Y-%m-%dT16:40:00Z}}", "entities": {"sentiment": {"basic": "Bearish"}}, "user": {"username": "harness_user_b"}},
+        {"id": 900003, "body": "$AAPL watching 230 support", "created_at": "{{D-3|%Y-%m-%dT13:12:00Z}}", "entities": {"sentiment": null}, "user": {"username": "harness_user_c"}}
+      ]}
+    },
+    {
+      "name": "reddit_search_json_waf",
+      "match": ["www.reddit.com/r/", "/search.json"],
+      "status": 403,
+      "text": "Blocked"
+    },
+    {
+      "name": "reddit_search_rss",
+      "match": ["www.reddit.com/r/", "/search.rss"],
+      "headers": {"Content-Type": "application/atom+xml; charset=UTF-8"},
+      "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><feed xmlns=\"http://www.w3.org/2005/Atom\"><title>search results</title><entry><title>Anyone holding Korean REITs through the rate decision?</title><published>{{D-1|%Y-%m-%dT09:00:00+00:00}}</published><content type=\"html\">&lt;p&gt;The dividend yield still looks attractive at this price.&lt;/p&gt;</content></entry><entry><title>Refinancing costs and REITs</title><published>{{D-3|%Y-%m-%dT11:30:00+00:00}}</published><content type=\"html\">&lt;p&gt;Higher rates would pressure the whole sector.&lt;/p&gt;</content></entry></feed>"
+    }
+  ]
+}
