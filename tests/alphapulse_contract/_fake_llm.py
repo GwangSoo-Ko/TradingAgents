@@ -11,14 +11,23 @@ Replies come from the scenario's ``roles`` scripts:
 * analyst tool loops: ``tool_rounds[i]`` is returned as an AIMessage with
   ``tool_calls`` while ``i`` (= AI tool-call messages already in the prompt) is in
   range, filtered to the tools the node actually bound; then ``text``.
-* structured calls: ``with_structured_output(Schema)`` mirrors
-  ``ChatAnthropicVertex.with_structured_output`` (the production path): bind the
-  schema as the only tool, then parse the first tool call with
+* structured calls: at the ``"sdk"`` boundary the fake ChatAnthropicVertex's own
+  ``with_structured_output`` does what the real one does (forces the schema tool),
+  and the fork's ``NormalizedChatAnthropicVertex`` override replaces it with
+  ``tradingagents.llm_clients.claude_structured`` — so losing that override shows up
+  as the 400 below. At the ``"factory"`` boundary no fork client wraps the fake, so
+  ``HarnessChatModel.with_structured_output`` runs that same fork path itself: the
+  schema bound as the only tool with ``tool_choice="auto"``, an
+  answer-through-the-tool instruction, one re-ask on a prose reply, then
   ``Schema.model_validate(args)`` — the fork's real validators/coercers run, and a
   ValidationError propagates exactly like the real parser's, so the fork's real
-  free-text fallback runs. ``structured`` may be a raw dict (the tool args),
-  ``"fail"`` (the model answers in prose, no tool call -> parser returns None) or
-  ``"raise"`` (a provider error).
+  free-text fallback runs. A request whose only tool is a Pydantic schema is
+  scripted from ``structured``: a raw dict (the tool args), ``"fail"`` (the model
+  answers in prose, no tool call) or ``"raise"`` (a provider error).
+* like the real Claude Opus 5.5 / Sonnet 5.5, a request that forces a tool call
+  (``tool_choice`` ``{"type": "tool"}`` / ``"any"`` / a tool name) on one of those
+  models is answered with the API's 400 — so a path that forces one breaks the run
+  here before it breaks production.
 * anything else: ``text`` (a string, or a list consumed call by call).
 
 Two installation boundaries (scenario ``llm_boundary``):
@@ -42,11 +51,45 @@ from typing import Any
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
-from langchain_core.runnables import RunnableLambda, RunnableMap, RunnablePassthrough
+from langchain_core.runnables import RunnableLambda
+from pydantic import BaseModel
 
 from . import _runtime as rt
 
 _MAX_TOOL_ROUNDS = 8
+
+# Models whose API answers a forced tool call with a 400 (live on Vertex, 2026-10-01).
+REJECTS_FORCED_TOOL_CHOICE = frozenset(
+    {"claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-mythos-5-1"})
+FORCED_TOOL_CHOICE_ERROR = 'tool_choice: type "tool" and "any" are not supported for this model.'
+
+
+class HarnessBadRequest(RuntimeError):
+    """The 400 the real API returns (invalid_request_error)."""
+
+
+def _forces_a_tool(tool_choice: Any) -> bool:
+    if tool_choice in (None, "auto", "none"):
+        return False
+    if isinstance(tool_choice, dict):
+        return tool_choice.get("type") in ("tool", "any")
+    return True  # "any", or a tool name (LangChain's shorthand for {"type": "tool"})
+
+
+def _schema_tool(tools: list[Any]) -> str | None:
+    """The schema name when the request's only tool is a Pydantic schema (a structured call)."""
+    if len(tools) == 1 and isinstance(tools[0], type) and issubclass(tools[0], BaseModel):
+        return tools[0].__name__
+    return None
+
+
+def model_of(llm_id: int) -> str | None:
+    """The model name the LLM with this construction id was built for."""
+    records = rt.CAPTURES["llm_constructions"]
+    if not 0 <= llm_id < len(records):
+        return None
+    rec = records[llm_id]
+    return rec.get("model") or (rec.get("kwargs") or {}).get("model_name")
 
 
 def _tool_name(tool: Any) -> str:
@@ -98,33 +141,24 @@ class HarnessChatModel(BaseChatModel):
     def bind_tools(self, tools: Any, *, tool_choice: Any = None, **kwargs: Any):
         return self.bind(tools=list(tools), tool_choice=tool_choice, **kwargs)
 
-    def with_structured_output(self, schema: Any, *, include_raw: bool = False,
-                               method: Any = None, **kwargs: Any):
-        name = _tool_name(schema)
+    def _record_binding(self, schema: Any, include_raw: bool, method: Any,
+                        kwargs: dict[str, Any]) -> None:
         with rt._lock:
             rt.CAPTURES["structured_bindings"].append(rt.json_safe({
-                "llm_id": self.harness_llm_id, "schema": name, "method": method,
+                "llm_id": self.harness_llm_id, "schema": _tool_name(schema), "method": method,
                 "include_raw": include_raw, "kwargs": kwargs,
             }))
-        bound = self.bind(tools=[schema], tool_choice=name, harness_structured=name)
 
-        def _parse(message: Any) -> Any:
-            tool_calls = getattr(message, "tool_calls", None) or []
-            if not tool_calls:
-                return None
-            args = tool_calls[0].get("args")
-            if isinstance(schema, type) and hasattr(schema, "model_validate"):
-                return schema.model_validate(args)
-            return args
+    def with_structured_output(self, schema: Any, *, include_raw: bool = False,
+                               method: Any = None, **kwargs: Any):
+        """Factory boundary: no fork client wraps this model, so it answers like the
+        object production builds (NormalizedChatAnthropicVertex): the fork's auto-tool path."""
+        self._record_binding(schema, include_raw, method, kwargs)
+        # Imported here, not at module level: importing ``tradingagents`` runs its
+        # load_dotenv(), which must happen when main.py imports it, not at harness boot.
+        from tradingagents.llm_clients.claude_structured import auto_tool_structured_output
 
-        parser = RunnableLambda(_parse)
-        if include_raw:
-            assign = RunnablePassthrough.assign(parsed=lambda d: _parse(d["raw"]),
-                                                parsing_error=lambda _: None)
-            fallback = RunnablePassthrough.assign(parsed=lambda _: None)
-            return RunnableMap(raw=bound) | assign.with_fallbacks([fallback],
-                                                                   exception_key="parsing_error")
-        return bound | parser
+        return auto_tool_structured_output(self, schema, include_raw=include_raw)
 
     # -- scripted generation ------------------------------------------------------
     def _generate(self, messages: list[BaseMessage], stop: Any = None,
@@ -135,7 +169,7 @@ class HarnessChatModel(BaseChatModel):
             rt.note_node_config(top)
         tools = kwargs.get("tools") or []
         tool_names = [_tool_name(t) for t in tools]
-        schema = kwargs.get("harness_structured")
+        schema = _schema_tool(tools)
         kind = "structured" if schema else ("tools" if tools else "chat")
         script = rt.role_script(role)
         index = rt.bump_counter(role, kind)
@@ -143,9 +177,13 @@ class HarnessChatModel(BaseChatModel):
             "seq": rt.next_seq(), "node": top, "inner_node": inner, "role": role,
             "llm_id": self.harness_llm_id, "kind": kind, "schema": schema,
             "tools": tool_names if kind == "tools" else None, "call_index": index,
+            "tool_choice": kwargs.get("tool_choice"),
             "messages": [_message_record(m) for m in messages],
         }
         try:
+            if (tools and _forces_a_tool(kwargs.get("tool_choice"))
+                    and model_of(self.harness_llm_id) in REJECTS_FORCED_TOOL_CHOICE):
+                raise HarnessBadRequest(f"Error code: 400 - {FORCED_TOOL_CHOICE_ERROR}")
             reply = self._reply(kind, script, schema, tool_names, messages, index, record)
         except Exception as exc:
             record["reply"] = {"raised": f"{type(exc).__name__}: {exc}"}
@@ -236,6 +274,24 @@ class FakeChatAnthropicVertex(HarnessChatModel):
         rec_id = record_construction("sdk", sdk_class="ChatAnthropicVertex", kwargs=kwargs)
         passthrough = {k: kwargs[k] for k in ("callbacks", "tags", "metadata") if k in kwargs}
         super().__init__(harness_llm_id=rec_id, **passthrough)
+
+    def with_structured_output(self, schema: Any, *, include_raw: bool = False,
+                               method: Any = None, **kwargs: Any):
+        """What the real ChatAnthropicVertex does: force the schema tool, parse the first
+        call. The 5.5 models answer that with the 400, so at this boundary only the
+        fork's own override (``_ClaudeStructuredOutput``) keeps a structured call alive."""
+        self._record_binding(schema, include_raw, method, kwargs)
+        bound = self.bind_tools([schema], tool_choice=_tool_name(schema))
+
+        def _first_call(message: Any) -> Any:
+            calls = getattr(message, "tool_calls", None) or []
+            if not calls:
+                return None
+            if isinstance(schema, type) and hasattr(schema, "model_validate"):
+                return schema.model_validate(calls[0].get("args"))
+            return calls[0].get("args")
+
+        return bound | RunnableLambda(_first_call)
 
 
 def install_sdk_fakes() -> None:

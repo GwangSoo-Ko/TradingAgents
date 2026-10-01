@@ -53,7 +53,7 @@ class TestAnalysisConfigBlock:
         }
         block = analysis_config_block(cfg)
         assert "vertex-multimodel" in block
-        assert "research_manager" in block and "claude-opus-5" in block
+        assert "research_manager" in block and "claude-opus-5-5" in block
         # trader is NOT in the preset -> shown as a tier default (Gemini)
         assert "trader" in block and "tier default" in block
         # all 12 roles appear
@@ -118,10 +118,10 @@ class TestBuildReportHeader:
         judges = {"research_manager", "portfolio_manager"}
         assert len(rows) == 12
         for role in judges:
-            assert f"| {role} | `vertex_anthropic` | `claude-opus-5` |" in rows
+            assert f"| {role} | `vertex_anthropic` | `claude-opus-5-5` |" in rows
         for row in rows:
             if row.split(" ")[1] not in judges:
-                assert row.endswith("*(tier default)* | `vertex_anthropic` | `claude-sonnet-5` |")
+                assert row.endswith("*(tier default)* | `vertex_anthropic` | `claude-sonnet-5-5` |")
 
     def test_the_writer_puts_it_above_the_sections(self, tmp_path):
         from tradingagents.reporting import write_report_tree

@@ -2,9 +2,9 @@
 
 alpha-pulse runs ``main.py`` unmodified, so the model side of production is exactly
 what ``main.build_config()`` makes the fork build, and production pins it: the two
-judges (Research Manager, Portfolio Manager) on ``claude-opus-5`` at effort ``max``;
-every other role, and the settlement reflection, on ``claude-sonnet-5`` at effort
-``high``; ``max_tokens`` 20000 and adaptive thinking everywhere; the Vertex project from
+judges (Research Manager, Portfolio Manager) on ``claude-opus-5-5`` at effort ``xhigh``;
+every other role, and the settlement reflection, on ``claude-sonnet-5-5`` at effort
+``high``; ``max_tokens`` 32000 and adaptive thinking everywhere; the Vertex project from
 GOOGLE_CLOUD_PROJECT (the harness sets the fork's documented example, ``tpmn-dev``) at
 location ``global`` (GOOGLE_CLOUD_LOCATION left unset); Korean output; the KR vendors
 (news ``naver,yfinance``, fundamentals ``wisereport,yfinance``, Naver 종목토론방) and the
@@ -36,7 +36,7 @@ from typing import Any
 
 import pytest
 
-from . import scenarios
+from . import contract_reader, scenarios
 from ._llm_helpers import replay_on_real_vertex_sdk
 from .harness import REPO_ROOT, RunResult, harness_python
 
@@ -71,13 +71,13 @@ def _vertex_kwargs(model: str, effort: str) -> dict[str, Any]:
         "model_name": model,
         "project": "tpmn-dev",
         "location": "global",
-        "max_tokens": 20000,
+        "max_tokens": 32000,
         "model_kwargs": {"output_config": {"effort": effort}, "thinking": {"type": "adaptive"}},
     }
 
 
-JUDGE_SDK_KWARGS = _vertex_kwargs("claude-opus-5", "max")
-WORKER_SDK_KWARGS = _vertex_kwargs("claude-sonnet-5", "high")
+JUDGE_SDK_KWARGS = _vertex_kwargs("claude-opus-5-5", "xhigh")
+WORKER_SDK_KWARGS = _vertex_kwargs("claude-sonnet-5-5", "high")
 
 # Vertex AI's Anthropic endpoint: model, project and location travel in the URL.
 RAW_PREDICT_URL = ("https://aiplatform.googleapis.com/v1/projects/tpmn-dev/locations/global/"
@@ -154,7 +154,7 @@ def _expected_kwargs(role: str) -> dict[str, Any]:
 
 
 def _expected_model_effort(role: str) -> tuple[str, str]:
-    return ("claude-opus-5", "max") if role in JUDGE_ROLES else ("claude-sonnet-5", "high")
+    return ("claude-opus-5-5", "xhigh") if role in JUDGE_ROLES else ("claude-sonnet-5-5", "high")
 
 
 def _config_at_first_data_tool(res: RunResult) -> dict[str, Any]:
@@ -264,10 +264,10 @@ def test_each_role_gets_its_vertex_client_with_the_production_settings(ap_run, r
 def test_generic_max_tokens_override_leaves_every_vertex_client_unchanged(ap_run):
     """Breaks if: the generic output cap (config['max_tokens'], set by TRADINGAGENTS_MAX_TOKENS,
     forwarded to every provider since upstream #1204) overrides the dedicated
-    anthropic_max_tokens 20000 — the fork's ``if key not in kwargs`` guard; upstream's
-    ``build_llm_kwargs`` has none. A lower cap truncates the Korean Portfolio Manager tool
-    input (structured call fails -> no TRADE_PLAN_JSON); a higher one can trip the Anthropic
-    SDK's streaming-required guard. Neither shows up as a failed run."""
+    anthropic_max_tokens 32000 — the fork's ``if key not in kwargs`` guard; upstream's
+    ``build_llm_kwargs`` has none. A lower cap lets the judges' thinking spend it (live,
+    Opus 5.5: thinking only, stop_reason max_tokens -> no tool call -> no TRADE_PLAN_JSON);
+    a higher one lengthens the worst-case call. Neither shows up as a failed run."""
     res = ap_run(_s1_sdk(), env_overrides={"TRADINGAGENTS_MAX_TOKENS": "8000"}).assert_ok()
     # Not vacuous: the generic cap really reached the config main.py built (the env string
     # stays a string there; the provider-kwargs builder coerces it).
@@ -309,7 +309,7 @@ def test_real_vertex_sdk_sends_the_production_request_for_each_role(ap_run, vert
     assert request["method"] == "POST"
     assert request["url"] == RAW_PREDICT_URL.format(model=model), (role, request["url"])
     body = request["body"] or {}
-    assert body.get("max_tokens") == 20000, (role, body.get("max_tokens"))
+    assert body.get("max_tokens") == 32000, (role, body.get("max_tokens"))
     assert body.get("output_config") == {"effort": effort}, (role, body.get("output_config"))
     assert body.get("thinking") == {"type": "adaptive"}, (role, body.get("thinking"))
     assert not {"temperature", "top_p", "top_k"} & set(body), (role, sorted(body))
@@ -332,6 +332,23 @@ def test_every_llm_call_of_a_nightly_run_uses_one_of_the_two_production_clients(
                           "kind": call.get("kind"), "kwargs": record.get("kwargs")})
     assert stray == [], stray[:5]
     assert {c.get("role") for c in res.llm_calls} == set(LLM_ROLES)
+
+
+def test_no_request_of_a_nightly_run_forces_a_tool_call(ap_run):
+    """Breaks if: a structured call goes back to a forced ``tool_choice`` (``{"type": "tool"}``,
+    ``"any"``, a tool name) — what ``ChatAnthropicVertex.with_structured_output`` sends.
+    Claude Opus 5.5 / Sonnet 5.5 answer it with a 400 (the harness does the same for those
+    models), the fork falls back to free text, and the run still exits 0: Research Manager,
+    Trader and Portfolio Manager lose their typed output and stdout loses TRADE_PLAN_JSON."""
+    res = ap_run(_s1_sdk()).assert_ok()
+    forced = [(c.get("role"), c.get("tool_choice")) for c in res.llm_calls
+              if c.get("tool_choice") not in (None, "auto")]
+    assert forced == [], forced[:5]
+    answered = {c.get("role") for c in res.llm_calls
+                if c.get("kind") == "structured" and "raised" not in (c.get("reply") or {})}
+    assert {"research_manager", "trader", "portfolio_manager"} <= answered, answered
+    plan = contract_reader.read_trade_plan(res.stdout)
+    assert plan is not None and plan.get("rating") == res.decision, (plan, res.decision)
 
 
 @pytest.mark.parametrize("role", GRAPH_ROLES)

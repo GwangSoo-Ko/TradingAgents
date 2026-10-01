@@ -25,7 +25,7 @@ class TestPresetShape:
         from cli.presets import VERTEX_DEBATE_PRESET
         for judge in ("research_manager", "portfolio_manager"):
             assert VERTEX_DEBATE_PRESET[judge] == {
-                "provider": "vertex_anthropic", "model": "claude-opus-5"
+                "provider": "vertex_anthropic", "model": "claude-opus-5-5"
             }
 
     def test_debaters_span_three_families(self):
@@ -82,7 +82,7 @@ class TestVertexSingleModel:
 
     def test_registry_models(self):
         from cli.presets import VERTEX_SINGLE_MODELS
-        assert VERTEX_SINGLE_MODELS["vertex_anthropic"] == "claude-opus-5"
+        assert VERTEX_SINGLE_MODELS["vertex_anthropic"] == "claude-opus-5-5"
         assert VERTEX_SINGLE_MODELS["vertex_grok"] == "xai/grok-4.3"
 
     def test_apply_noop_when_not_selected(self):
@@ -100,8 +100,8 @@ class TestVertexSingleModel:
             "vertex_project": "tpmn-dev", "vertex_location": None,
         })
         assert cfg["llm_provider"] == "vertex_anthropic"
-        assert cfg["quick_think_llm"] == "claude-opus-5"
-        assert cfg["deep_think_llm"] == "claude-opus-5"
+        assert cfg["quick_think_llm"] == "claude-opus-5-5"
+        assert cfg["deep_think_llm"] == "claude-opus-5-5"
         assert cfg["role_models"] is None
         assert cfg["vertex_project"] == "tpmn-dev"
         assert cfg["vertex_location"] == "global"
@@ -266,7 +266,7 @@ class TestVertexSelectionFlow:
         assert chosen["vertex_single_provider"] == "vertex_anthropic"
         assert (chosen["vertex_project"], chosen["vertex_location"]) == ("p", "us-east5")
         assert (chosen["quick_think_llm"], chosen["deep_think_llm"]) == (
-            "claude-opus-5", "claude-opus-5")
+            "claude-opus-5-5", "claude-opus-5-5")
         assert (chosen["anthropic_effort"], chosen["anthropic_max_tokens"],
                 chosen["anthropic_thinking"]) == ("high", 20000, "adaptive")
 
@@ -296,7 +296,7 @@ class TestVertexSelectionFlow:
         assert chosen["vertex_single_provider"] == "vertex_anthropic"
         assert (chosen["vertex_project"], chosen["vertex_location"]) == ("tpmn-dev", "global")
         assert (chosen["quick_think_llm"], chosen["deep_think_llm"]) == (
-            "claude-opus-5", "claude-opus-5")
+            "claude-opus-5-5", "claude-opus-5-5")
         assert (chosen["anthropic_effort"], chosen["anthropic_max_tokens"],
                 chosen["anthropic_thinking"]) == ("max", 20000, "adaptive")
 
@@ -457,7 +457,7 @@ def test_run_applies_the_vertex_preset_and_kr_sources_and_tags_the_report(monkey
     assert report.splitlines()[0] == (
         "# Trading Analysis Report: Samsung Electronics Co., Ltd. (005930.KS)")
     assert "**Analysis mode:** vertex-multimodel" in report
-    assert "| portfolio_manager | `vertex_anthropic` | `claude-opus-5` |" in report
+    assert "| portfolio_manager | `vertex_anthropic` | `claude-opus-5-5` |" in report
     assert (report_dir / "1_analysts" / "market.md").read_text(encoding="utf-8") == "MKT"
     assert (report_dir / "5_portfolio" / "decision.md").read_text(encoding="utf-8") == (
         "**Rating**: Hold")

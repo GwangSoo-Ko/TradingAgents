@@ -106,18 +106,18 @@ WRITER_HEADINGS = [
 
 # The per-role models main.build_config() runs, as the report header must list them.
 ROLE_MODELS = {
-    "market_analyst": ("vertex_anthropic", "claude-sonnet-5"),
-    "sentiment_analyst": ("vertex_anthropic", "claude-sonnet-5"),
-    "news_analyst": ("vertex_anthropic", "claude-sonnet-5"),
-    "fundamentals_analyst": ("vertex_anthropic", "claude-sonnet-5"),
-    "bull_researcher": ("vertex_anthropic", "claude-sonnet-5"),
-    "bear_researcher": ("vertex_anthropic", "claude-sonnet-5"),
-    "research_manager": ("vertex_anthropic", "claude-opus-5"),
-    "trader": ("vertex_anthropic", "claude-sonnet-5"),
-    "aggressive_debator": ("vertex_anthropic", "claude-sonnet-5"),
-    "conservative_debator": ("vertex_anthropic", "claude-sonnet-5"),
-    "neutral_debator": ("vertex_anthropic", "claude-sonnet-5"),
-    "portfolio_manager": ("vertex_anthropic", "claude-opus-5"),
+    "market_analyst": ("vertex_anthropic", "claude-sonnet-5-5"),
+    "sentiment_analyst": ("vertex_anthropic", "claude-sonnet-5-5"),
+    "news_analyst": ("vertex_anthropic", "claude-sonnet-5-5"),
+    "fundamentals_analyst": ("vertex_anthropic", "claude-sonnet-5-5"),
+    "bull_researcher": ("vertex_anthropic", "claude-sonnet-5-5"),
+    "bear_researcher": ("vertex_anthropic", "claude-sonnet-5-5"),
+    "research_manager": ("vertex_anthropic", "claude-opus-5-5"),
+    "trader": ("vertex_anthropic", "claude-sonnet-5-5"),
+    "aggressive_debator": ("vertex_anthropic", "claude-sonnet-5-5"),
+    "conservative_debator": ("vertex_anthropic", "claude-sonnet-5-5"),
+    "neutral_debator": ("vertex_anthropic", "claude-sonnet-5-5"),
+    "portfolio_manager": ("vertex_anthropic", "claude-opus-5-5"),
 }
 _MODEL_ROW_RE = re.compile(
     r"^\| (?P<role>[a-z_]+)(?: \*\(tier default\)\*)? "
@@ -520,7 +520,7 @@ def test_complete_report_title_names_the_company_and_the_ticker(ap_run, name):
 def test_complete_report_header_lists_the_model_behind_every_role(ap_run):
     """Breaks if: the report header stops documenting the models — upstream's writers have no
     per-role table, and a merged build_config that loses role_models or the tiering lists
-    other models (RM/PM must read claude-opus-5, the other ten roles claude-sonnet-5, all on
+    other models (RM/PM must read claude-opus-5-5, the other ten roles claude-sonnet-5-5, all on
     vertex_anthropic)."""
     res = ap_run(S1).assert_ok()
     table = _model_table(res.complete_report)

@@ -148,10 +148,10 @@ def build_llm_kwargs(config: dict) -> dict[str, Any]:
     if max_tokens is not None and max_tokens != "":
         key = "max_output_tokens" if provider == "google" else "max_tokens"
         # A provider-specific cap set above wins. vertex_anthropic takes its cap
-        # from ``anthropic_max_tokens``, a policy value kept below ~21.3k so the
-        # non-streaming node calls stay clear of the Anthropic SDK's
-        # streaming-required guard; letting the generic setting overwrite it would
-        # let one TRADINGAGENTS_MAX_TOKENS env var silently defeat that policy.
+        # from ``anthropic_max_tokens``, a policy value sized for thinking plus the
+        # answer (too low and a judge's thinking spends it: no tool call, no
+        # TRADE_PLAN_JSON); letting the generic setting overwrite it would let one
+        # TRADINGAGENTS_MAX_TOKENS env var silently defeat that policy.
         # The per-role path (TradingAgentsGraph._provider_kwargs_for) never
         # forwards the generic cap, so this guard gives both paths one meaning.
         if key not in kwargs:

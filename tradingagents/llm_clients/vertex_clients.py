@@ -23,27 +23,41 @@ from typing import Any
 
 from . import vertex_auth
 from .base_client import BaseLLMClient, normalize_content
+from .claude_structured import auto_tool_structured_output
 
 # Cache of dynamically-created Normalized<Base> subclasses, keyed on the base
 # class, so the subclass identity is stable across calls (and lazy imports).
 _NORMALIZED_CLASSES: dict = {}
 
 
-def _normalized_subclass(base_cls: type) -> type:
+class _ClaudeStructuredOutput:
+    """Structured output through an auto-chosen tool, never a forced one.
+
+    Claude Opus 5.5 / Sonnet 5.5 reject the forced ``tool_choice`` that
+    ``ChatAnthropicVertex.with_structured_output`` sends (see claude_structured).
+    """
+
+    def with_structured_output(self, schema, *, include_raw=False, **kwargs):
+        return auto_tool_structured_output(self, schema, include_raw=include_raw)
+
+
+def _normalized_subclass(base_cls: type, *mixins: type) -> type:
     """Return a cached subclass of ``base_cls`` that normalizes invoke() output.
 
     Mirrors the NormalizedChat* pattern in the other clients: providers that
     return list-of-blocks content (Gemini 3 reasoning blocks, Claude tool/think
-    blocks) are flattened to a plain string for downstream agents.
+    blocks) are flattened to a plain string for downstream agents. ``mixins``
+    go ahead of ``base_cls`` in the MRO, so their methods win.
     """
-    cached = _NORMALIZED_CLASSES.get(base_cls)
+    key = (base_cls, mixins)
+    cached = _NORMALIZED_CLASSES.get(key)
     if cached is None:
-        class _Normalized(base_cls):  # type: ignore[misc, valid-type]
+        class _Normalized(*mixins, base_cls):  # type: ignore[misc, valid-type]
             def invoke(self, input, config=None, **kwargs):
                 return normalize_content(super().invoke(input, config, **kwargs))
 
         _Normalized.__name__ = f"Normalized{base_cls.__name__}"
-        _NORMALIZED_CLASSES[base_cls] = _Normalized
+        _NORMALIZED_CLASSES[key] = _Normalized
         cached = _Normalized
     return cached
 
@@ -107,7 +121,7 @@ class VertexAnthropicClient(_VertexClientBase):
         except ImportError as exc:
             raise _require_vertex_sdk(exc) from exc
 
-        cls = _normalized_subclass(ChatAnthropicVertex)
+        cls = _normalized_subclass(ChatAnthropicVertex, _ClaudeStructuredOutput)
         llm_kwargs = {
             "model_name": self.model,
             "project": vertex_auth.resolve_project(self.project),

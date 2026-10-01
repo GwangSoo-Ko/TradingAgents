@@ -53,21 +53,27 @@ def build_config() -> dict:
 
     No vendor API key — ADC auth + the optional [vertex] extra; needs
     GOOGLE_CLOUD_PROJECT and ``gcloud auth application-default login``. The two
-    deep judges (Research/Portfolio Manager) run Opus 5 at max effort; every
-    other role runs Sonnet 5 at high effort. thinking/max_tokens are shared;
+    deep judges (Research/Portfolio Manager) run Opus 5.5 at xhigh effort; every
+    other role runs Sonnet 5.5 at high effort. thinking/max_tokens are shared;
     vertex_project/location resolve from GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION
-    (default "global"). max_tokens stays <= ~21.3k so the non-streaming node calls
-    don't trip the Anthropic SDK's "streaming required" guard. Comment the update
-    out to fall back to DEFAULT_CONFIG (OpenAI + .env).
+    (default "global"). Comment the update out to fall back to DEFAULT_CONFIG
+    (OpenAI + .env).
+
+    Thinking counts toward max_tokens. Measured on Vertex (2026-10-01, KR run,
+    12-20k input tokens): Opus 5.5 at effort max spent all of 20000 on thinking in
+    every judge call (no tool call -> no TRADE_PLAN_JSON); at xhigh the judges used
+    11-13k; the Sonnet 5.5 bear researcher at high reached 19.4k. 32000 leaves room
+    for both. ChatAnthropicVertex builds its SDK client with timeout=None, so the
+    SDK's non-streaming "streaming required" guard (~21.3k) does not apply here.
     """
     config = DEFAULT_CONFIG.copy()
     config.update({
         "llm_provider": "vertex_anthropic",
-        "deep_think_llm": "claude-opus-5",
-        "quick_think_llm": "claude-sonnet-5",
+        "deep_think_llm": "claude-opus-5-5",
+        "quick_think_llm": "claude-sonnet-5-5",
         "anthropic_thinking": "adaptive",
-        "anthropic_max_tokens": 20000,
-        "anthropic_effort": "high",          # quick tier (Sonnet 5) default
+        "anthropic_max_tokens": 32000,
+        "anthropic_effort": "high",          # quick tier (Sonnet 5.5) default
         "output_language": "Korean",         # localize the user-facing report/decision
         # KR-only vendors, opt-in by design (default_config keeps them off).
         # Both raise for non-KR tickers so the chain falls through to yfinance
@@ -91,14 +97,14 @@ def build_config() -> dict:
         # switch the read off). Pinned here so the consumer's account channel
         # does not hang on DEFAULT_CONFIG's default.
         "position_context_from_env": True,
-        "role_models": {                     # override the two deep judges -> Opus / max
+        "role_models": {                     # override the two deep judges -> Opus / xhigh
             "research_manager": {
-                "provider": "vertex_anthropic", "model": "claude-opus-5",
-                "anthropic_effort": "max",
+                "provider": "vertex_anthropic", "model": "claude-opus-5-5",
+                "anthropic_effort": "xhigh",
             },
             "portfolio_manager": {
-                "provider": "vertex_anthropic", "model": "claude-opus-5",
-                "anthropic_effort": "max",
+                "provider": "vertex_anthropic", "model": "claude-opus-5-5",
+                "anthropic_effort": "xhigh",
             },
         },
     })

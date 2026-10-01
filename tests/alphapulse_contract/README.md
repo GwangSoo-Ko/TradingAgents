@@ -14,7 +14,7 @@ They do not freeze internals. They freeze exactly what alpha-pulse consumes:
 | report tree (`complete_report.md` + section files) | web report view, discovery deep report |
 | env semantics: `TRADINGAGENTS_{RESULTS_DIR,CACHE_DIR,MEMORY_LOG_PATH,CHECKPOINT_ENABLED,POSITION_CONTEXT}` (`''` = not injected) | set for every run: per-run paths, a per-ticker memory log, checkpoints off, the account JSON or `''` |
 | account context reaches the Portfolio Manager only (holdings + Founding Thesis + revision instruction); account numbers scrubbed from the archived memory-log copy only | its revision gate assumes the PM saw the thesis it sent |
-| per-role LLM: RM/PM `claude-opus-5` effort max, all other roles `claude-sonnet-5` effort high, `max_tokens` 20000, thinking adaptive, Vertex (`GOOGLE_CLOUD_PROJECT`, location `global`), Korean output, KR vendors | production runs `main.build_config()` unmodified |
+| per-role LLM: RM/PM `claude-opus-5-5` effort xhigh, all other roles `claude-sonnet-5-5` effort high, `max_tokens` 32000, thinking adaptive, Vertex (`GOOGLE_CLOUD_PROJECT`, location `global`), Korean output, KR vendors | production runs `main.build_config()` unmodified |
 
 Contract docs on the fork side: `docs/INTEGRATION.md` (§1b the output and the plan
 contract, §4 `TRADINGAGENTS_POSITION_CONTEXT`) and main.py's comments.

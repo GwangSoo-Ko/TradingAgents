@@ -27,8 +27,8 @@ import sys
 
 # (model, effort) pairs mirroring the tiered default in main.py.
 CASES = [
-    ("claude-opus-4-8", "max"),
-    ("claude-sonnet-5", "high"),
+    ("claude-opus-5-5", "max"),
+    ("claude-sonnet-5-5", "high"),
 ]
 
 

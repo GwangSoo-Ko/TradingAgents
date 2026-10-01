@@ -83,10 +83,15 @@ The decision line is the Portfolio Manager's typed rating (the same value as
 the parsed signal, `REVIEW` when no rating is readable.
 
 > ⚠️ `main.py` carries a **hard-coded run config** (`build_config()` — currently a
-> tiered Vertex Claude setup: Opus 5 at effort max for the Research and Portfolio
-> Managers via `role_models`, Sonnet 5 at effort high for every other role,
-> `max_tokens` 20000, adaptive thinking, Korean output, KR vendor chains, all four
-> analysts, `portfolio_notice_when_absent: False`). Shelling out to `main.py` uses
+> tiered Vertex Claude setup: Opus 5.5 (`claude-opus-5-5`) at effort xhigh for the Research
+> and Portfolio Managers via `role_models`, Sonnet 5.5 (`claude-sonnet-5-5`) at effort high
+> for every other role, `max_tokens` 32000 (thinking counts toward it), adaptive thinking,
+> Korean output, KR vendor chains, all four analysts, `portfolio_notice_when_absent:
+> False`). Their structured calls (Research Manager, Trader, Portfolio Manager, sentiment)
+> go through `llm_clients/claude_structured.py`: the 5.5 models reject a forced
+> `tool_choice`, so the schema tool is offered with `tool_choice="auto"`, and a reply that
+> stopped at `max_tokens`/`refusal` is a miss (free-text fallback, no `TRADE_PLAN_JSON`).
+> Shelling out to `main.py` uses
 > *that* config; to vary provider/models/language per run, either edit
 > `build_config()` or use the import path (mode B) below. After the run `main.py`
 > imports `cli.report_meta.build_report_header` and

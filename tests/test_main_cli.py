@@ -140,8 +140,8 @@ class TestMainWritesReports:
         assert text.startswith("# Trading Analysis Report: Micron Technology, Inc. (MU)\n\n"
                                "Generated: ")
         # The model table comes from main.build_config(): Opus judges, Sonnet elsewhere.
-        assert "| portfolio_manager | `vertex_anthropic` | `claude-opus-5` |" in text
-        assert "| trader *(tier default)* | `vertex_anthropic` | `claude-sonnet-5` |" in text
+        assert "| portfolio_manager | `vertex_anthropic` | `claude-opus-5-5` |" in text
+        assert "| trader *(tier default)* | `vertex_anthropic` | `claude-sonnet-5-5` |" in text
         assert (report.parent / "1_analysts" / "market.md").read_text(encoding="utf-8") == "MKT"
         assert (report.parent / "5_portfolio" / "decision.md").read_text(
             encoding="utf-8") == "**Rating**: Buy"
@@ -231,17 +231,17 @@ def test_build_config_is_the_korean_vertex_run_the_consumer_relies_on():
     re-bases build_config on upstream's defaults changes every run silently."""
     cfg = m.build_config()
     assert cfg["llm_provider"] == "vertex_anthropic"
-    assert (cfg["deep_think_llm"], cfg["quick_think_llm"]) == ("claude-opus-5", "claude-sonnet-5")
+    assert (cfg["deep_think_llm"], cfg["quick_think_llm"]) == ("claude-opus-5-5", "claude-sonnet-5-5")
     assert (cfg["anthropic_thinking"], cfg["anthropic_max_tokens"], cfg["anthropic_effort"]) == (
-        "adaptive", 20000, "high")
+        "adaptive", 32000, "high")
     assert cfg["output_language"] == "Korean"
     assert cfg["data_vendors"]["news_data"] == "naver,yfinance"
     assert cfg["data_vendors"]["fundamental_data"] == "wisereport,yfinance"
     assert cfg["enable_kr_discussion_sentiment"] is True
     assert cfg["position_context_from_env"] is True  # the PM-only account channel
     assert cfg["role_models"] == {
-        role: {"provider": "vertex_anthropic", "model": "claude-opus-5",
-               "anthropic_effort": "max"}
+        role: {"provider": "vertex_anthropic", "model": "claude-opus-5-5",
+               "anthropic_effort": "xhigh"}
         for role in ("research_manager", "portfolio_manager")
     }
 
@@ -254,8 +254,8 @@ _JUDGES = {"research_manager", "portfolio_manager"}
 def test_every_role_gets_the_runners_model_and_effort(monkeypatch, tmp_path, generic_max_tokens):
     """What each graph role is built with under main.build_config(), through the
     real resolver (tier defaults + role_models + client dedup): the two judges on
-    Opus 5 at effort max, every other role and the reflector on Sonnet 5 at effort
-    high, all with max_tokens 20000 and adaptive thinking -- and nothing else
+    Opus 5.5 at effort xhigh, every other role and the reflector on Sonnet 5.5 at
+    effort high, all with max_tokens 32000 and adaptive thinking -- and nothing else
     (no temperature, no retry override). A merge that routes a judge through the
     deep tier, drops a per-role effort or lets the generic max_tokens replace the
     Vertex cap changes the production run without failing anything else."""
@@ -277,13 +277,13 @@ def test_every_role_gets_the_runners_model_and_effort(monkeypatch, tmp_path, gen
 
     def spec(model, effort):
         return {"provider": "vertex_anthropic", "model": model, "base_url": None,
-                "effort": effort, "max_tokens": 20000, "thinking": "adaptive",
+                "effort": effort, "max_tokens": 32000, "thinking": "adaptive",
                 "project": None, "location": None}
 
     for role in sorted(tg.ROLE_KEYS):
-        want = spec("claude-opus-5", "max") if role in _JUDGES else spec("claude-sonnet-5", "high")
+        want = spec("claude-opus-5-5", "xhigh") if role in _JUDGES else spec("claude-sonnet-5-5", "high")
         assert built[id(graph._llm_for(role))] == want, role
-    assert built[id(graph.reflector.quick_thinking_llm)] == spec("claude-sonnet-5", "high")
+    assert built[id(graph.reflector.quick_thinking_llm)] == spec("claude-sonnet-5-5", "high")
     assert len(tg.ROLE_KEYS) == 12
 
 

@@ -10,6 +10,24 @@ Changes that need action when upgrading are listed first in their release.
 
 Fork additions (not yet in an upstream release).
 
+### Changed
+
+- **`main.py` runs Claude Opus 5.5 / Sonnet 5.5 on Vertex** (`claude-opus-5-5` for the
+  Research and Portfolio Managers at effort `xhigh`, `claude-sonnet-5-5` at `high` for
+  every other role), with `anthropic_max_tokens` 32000. Measured live on Vertex: Opus 5.5
+  at effort `max` spent the whole 20000-token cap on thinking in every judge call (no
+  tool call, so no `TRADE_PLAN_JSON`); at `xhigh` the judges used 11-13k tokens and the
+  Sonnet 5.5 bear researcher at `high` reached 19.4k. The CLI's Vertex presets follow.
+- **Vertex Claude structured output never forces the tool call.** Opus 5.5 / Sonnet 5.5
+  answer a forced `tool_choice` with a 400, which is what
+  `ChatAnthropicVertex.with_structured_output` sends; native `output_config.format`
+  fails on `PortfolioDecision` ("Grammar compilation timed out").
+  `llm_clients/claude_structured.py` binds the schema as the only tool with
+  `tool_choice="auto"`, tells the model to answer through it, re-asks once on a prose
+  reply, and treats a reply that stopped at `max_tokens` or `refusal` as a miss (no
+  re-ask; a possibly truncated plan is never validated). The alpha-pulse contract
+  harness answers a forced tool call on those models with the API's 400.
+
 ### Added
 
 - **`portfolio_notice_when_absent`** (default `True`). Upstream v0.5.1 tells the

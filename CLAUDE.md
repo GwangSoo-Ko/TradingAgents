@@ -70,6 +70,8 @@ Two LLM tiers: `quick_thinking_llm` for analysts/researchers/risk debaters/Trade
 
 Research Manager, Trader, and Portfolio Manager use `llm.with_structured_output(Schema)` and return typed Pydantic instances from `tradingagents/agents/schemas.py`. **The provider-specific mode matters** and is encoded in the agent factories: `json_schema` (OpenAI/xAI/DeepSeek/Qwen/GLM), `response_schema` (Gemini), tool-use (Anthropic), `function_calling` (OpenAI default to silence noisy `PydanticSerializationUnexpectedValue` warnings from langchain-openai's Responses-API parser).
 
+**Vertex Claude never forces the tool call.** Claude Opus 5.5 / Sonnet 5.5 answer a forced `tool_choice` (`{"type": "tool"}` / `"any"`, what `ChatAnthropicVertex.with_structured_output` sends) with a 400, and native structured outputs (`output_config.format`) fail on `PortfolioDecision` with "Grammar compilation timed out". So `NormalizedChatAnthropicVertex` overrides `with_structured_output` with `llm_clients/claude_structured.py:auto_tool_structured_output`: the schema bound as the only tool with `tool_choice="auto"`, an answer-through-the-tool instruction appended, one re-ask when a reply carries no call, then `Schema.model_validate` on the call's arguments (a validation error raises at once — the fail-closed coercers still decide). The alpha-pulse contract harness answers a forced tool call on those models with the API's 400, so a path that forces one fails the suite.
+
 `agents/structured.py:invoke_structured_or_freetext` returns `(markdown, obj)` — `obj` is `None` on the free-text fallback. Render helpers (`render_research_plan`, `render_trader_proposal`, `render_pm_decision`) turn the Pydantic instance back into the legacy markdown shape so the rest of the system (memory log, CLI display, saved reports) keeps working unchanged. **Don't bypass the render helpers** — downstream consumers expect that exact shape. The PM's typed object is `portfolio_decision_obj`, which `main.py` prints as the `TRADE_PLAN_JSON:` line. Its plan numbers are fail-closed (`_coerce_plan_float`: only placeholders become `None`, an unreadable number fails the whole decision); upstream's salvaging `_coerce_optional_float` applies to `TraderProposal` only.
 
 `tradingagents/agents/rating.py:parse_rating` reads the rating from rendered markdown — no extra LLM call. The first line that opens with a `Rating:` label wins (so a rating the prose quotes later does not), else the last label, else a single rating word, else `REVIEW`. `process_signal()` and the memory-log tag use it; `main.py` prints the PM's typed rating when it has one. The 5-tier scale (Buy/Overweight/Hold/Underweight/Sell) is used by Research Manager and Portfolio Manager; Trader keeps 3-tier (Buy/Hold/Sell).
@@ -122,7 +124,7 @@ Don't remove the vendor-direct providers — they stay for single-model runs.
 
 For users without an Anthropic/xAI API key, two CLI options run the **whole
 pipeline on a single Vertex-hosted model** (no vendor key, ADC auth): **"Vertex
-Model Garden — Claude (claude-opus-5)"** and **"Vertex Model Garden — Grok
+Model Garden — Claude (claude-opus-5-5)"** and **"Vertex Model Garden — Grok
 (xai/grok-4.3)"**. Their provider key IS the real `vertex_anthropic` /
 `vertex_grok` client key; `cli/presets.py:VERTEX_SINGLE_MODELS` maps it to the
 fixed model and `apply_vertex_single_model_config` sets `llm_provider` +
