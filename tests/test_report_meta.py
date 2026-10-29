@@ -110,7 +110,9 @@ class TestBuildReportHeader:
         assert header.startswith(
             "# Trading Analysis Report: 하나글로벌리츠 (417310.KS)\n\n"
             "Generated: 2026-08-19 21:34:05\n\n"
-            "**Analysis mode:** vertex-multimodel\n\n"
+            # main.py 의 심판은 직접 anthropic 공급자의 role_models 덮어쓰기다(모든 역할이
+            # vertex_* 인 경우가 아니다): 일반 multi-model 태그가 붙는다.
+            "**Analysis mode:** multimodel\n\n"
             "| Role | Provider | Model |\n| --- | --- | --- |\n"
         )
         assert header.endswith("` |\n\n")
@@ -118,10 +120,10 @@ class TestBuildReportHeader:
         judges = {"research_manager", "portfolio_manager"}
         assert len(rows) == 12
         for role in judges:
-            assert f"| {role} | `vertex_anthropic` | `claude-opus-5-5` |" in rows
+            assert f"| {role} | `anthropic` | `claude-opus-5-5` |" in rows
         for row in rows:
             if row.split(" ")[1] not in judges:
-                assert row.endswith("*(tier default)* | `vertex_anthropic` | `claude-sonnet-5-5` |")
+                assert row.endswith("*(tier default)* | `anthropic` | `claude-sonnet-5-5` |")
 
     def test_the_writer_puts_it_above_the_sections(self, tmp_path):
         from tradingagents.reporting import write_report_tree

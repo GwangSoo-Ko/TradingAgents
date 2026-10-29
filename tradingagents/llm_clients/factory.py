@@ -118,16 +118,16 @@ def build_llm_kwargs(config: dict) -> dict[str, Any]:
         effort = config.get("anthropic_effort")
         if effort:
             kwargs["effort"] = effort
-        # max_tokens/thinking are wired only for the Vertex Claude client
-        # (VertexAnthropicClient routes them into model_kwargs); the
-        # vendor-direct anthropic path is left untouched.
-        if provider == "vertex_anthropic":
-            max_tokens = config.get("anthropic_max_tokens")
-            if max_tokens is not None and max_tokens != "":
-                kwargs["max_tokens"] = _coerce_max_tokens(max_tokens)
-            thinking = config.get("anthropic_thinking")
-            if thinking:
-                kwargs["thinking"] = thinking
+        # 두 Claude 클라이언트가 전용 상한과 thinking 을 같은 규칙으로 받는다:
+        # AnthropicClient(main.py 가 쓰는 직접 API)는 ChatAnthropic 의 필드로,
+        # VertexAnthropicClient 는 model_kwargs 로 넘긴다. thinking 은 "adaptive"/
+        # "disabled" 약식이나 dict 이고, 번역은 각 클라이언트가 한다.
+        max_tokens = config.get("anthropic_max_tokens")
+        if max_tokens is not None and max_tokens != "":
+            kwargs["max_tokens"] = _coerce_max_tokens(max_tokens)
+        thinking = config.get("anthropic_thinking")
+        if thinking:
+            kwargs["thinking"] = thinking
 
     # Sampling temperature is cross-provider: forward it whenever set.
     # float() here so a value coming from a TRADINGAGENTS_TEMPERATURE env
@@ -147,6 +147,7 @@ def build_llm_kwargs(config: dict) -> dict[str, Any]:
     max_tokens = config.get("max_tokens")
     if max_tokens is not None and max_tokens != "":
         key = "max_output_tokens" if provider == "google" else "max_tokens"
+        # 직접 API 공급자 anthropic 도 vertex_anthropic 과 같이 전용 상한을 쓴다.
         # A provider-specific cap set above wins. vertex_anthropic takes its cap
         # from ``anthropic_max_tokens``, a policy value sized for thinking plus the
         # answer (too low and a judge's thinking spends it: no tool call, no

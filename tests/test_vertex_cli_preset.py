@@ -144,8 +144,8 @@ class _FakeText:
 
 @pytest.mark.unit
 class TestVertexConfigDefaults:
-    """The GCP project prompt defaults to tpmn-dev when GOOGLE_CLOUD_PROJECT is
-    unset, but the env var still wins when present."""
+    """GCP 프로젝트 질문에는 자체 기본값이 없다: GOOGLE_CLOUD_PROJECT 가 있으면 그
+    값으로 채우고, 없으면 빈 칸에서 시작해(하드코딩된 프로젝트 없음) 검증이 입력을 요구한다."""
 
     def _project_default(self, monkeypatch, env):
         import cli.prompts as u
@@ -163,8 +163,32 @@ class TestVertexConfigDefaults:
         u.ask_vertex_config()
         return defaults[0]  # the project prompt's default
 
-    def test_project_defaults_to_tpmn_dev_without_env(self, monkeypatch):
-        assert self._project_default(monkeypatch, {}) == "tpmn-dev"
+    def test_project_has_no_default_without_env(self, monkeypatch):
+        assert self._project_default(monkeypatch, {}) == ""
+
+    def test_project_has_no_default_when_env_is_blank(self, monkeypatch):
+        assert self._project_default(monkeypatch, {"GOOGLE_CLOUD_PROJECT": ""}) == ""
+
+    def test_cli_source_has_no_hardcoded_gcp_project(self):
+        """CLI·패키지·스크립트·main.py 어디에도 tpmn-* 프로젝트 ID 가 기본값이나 폴백으로
+        남지 않는다 (시험은 픽스처 문자열로 써도 된다)."""
+        import pathlib
+        import re
+
+        root = pathlib.Path(__file__).resolve().parents[1]
+        hits = []
+        for top in ("cli", "tradingagents", "scripts"):
+            for path in (root / top).rglob("*.py"):
+                for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                    if re.search(r"tpmn-", line):
+                        hits.append(f"{path.relative_to(root)}:{n}: {line.strip()}")
+        for name in ("main.py", "swing_main.py"):
+            path = root / name
+            if path.exists():
+                for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                    if re.search(r"tpmn-", line):
+                        hits.append(f"{name}:{n}: {line.strip()}")
+        assert hits == []
 
     def test_project_honors_env_when_set(self, monkeypatch):
         assert self._project_default(

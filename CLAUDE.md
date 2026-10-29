@@ -17,7 +17,7 @@ tradingagents --clear-checkpoints              # wipe ~/.tradingagents/cache/che
 tradingagents --portfolio book.json            # size decisions against a caller portfolio (holdings + cash)
 tradingagents backtest NVDA,AAPL --start 2026-01-05 --end 2026-03-30   # score past decisions over a date grid
 python -m cli.main                             # equivalent to running the CLI from source
-python main.py TICKER [DATE]                   # the alpha-pulse runner (tiered Vertex Claude, Korean, KR vendors)
+python main.py TICKER [DATE]                   # the alpha-pulse runner (직접 Anthropic API 의 계층형 Claude, ANTHROPIC_API_KEY; Korean, KR vendors)
 ```
 
 Tests (pytest config in `pyproject.toml`, `testpaths = ["tests"]`):
@@ -28,10 +28,14 @@ pytest tests/test_memory_log.py -k append   # single test
 TZ=Asia/Seoul python3.11 -m pytest -q   # the production runtime (alpha-pulse runs Python 3.11 in KST)
 ```
 
-Vertex Claude smoke (live, ADC auth, 2 tiny calls — checks the endpoint accepts the
-thinking/effort/max_tokens request shape `VertexAnthropicClient` builds):
+Claude 스모크(실호출, 각각 작은 호출 2개). 직접 API 스모크가 main.py 의 것이다:
+`main.build_config()` 의 실제 블록으로 빠른 계층과 PM 심판을 fork 의 `NormalizedChatAnthropic`
+으로 만든다(max_tokens 32000 비스트리밍, thinking adaptive, `output_config.effort`, 심판은
+`tool_choice` auto 구조화 호출). `--dry-run` 은 키 없이 오프라인으로 요청 쌍만 출력한다.
+Vertex 스모크는 `VertexAnthropicClient` 가 만드는 요청 꼴을 확인한다(ADC 인증; 기본 프로젝트 없음):
 ```bash
-GOOGLE_CLOUD_PROJECT=tpmn-dev python scripts/smoke_vertex_thinking.py
+ANTHROPIC_API_KEY=... python scripts/smoke_anthropic_thinking.py [--dry-run]
+GOOGLE_CLOUD_PROJECT=<your-gcp-project> python scripts/smoke_vertex_thinking.py
 ```
 
 Docker (multi-stage; runtime image is `python:3.12-slim` with non-root `appuser`):
@@ -70,7 +74,7 @@ Two LLM tiers: `quick_thinking_llm` for analysts/researchers/risk debaters/Trade
 
 Research Manager, Trader, and Portfolio Manager use `llm.with_structured_output(Schema)` and return typed Pydantic instances from `tradingagents/agents/schemas.py`. **The provider-specific mode matters** and is encoded in the agent factories: `json_schema` (OpenAI/xAI/DeepSeek/Qwen/GLM), `response_schema` (Gemini), tool-use (Anthropic), `function_calling` (OpenAI default to silence noisy `PydanticSerializationUnexpectedValue` warnings from langchain-openai's Responses-API parser).
 
-**Vertex Claude never forces the tool call.** Claude Opus 5.5 / Sonnet 5.5 answer a forced `tool_choice` (`{"type": "tool"}` / `"any"`, what `ChatAnthropicVertex.with_structured_output` sends) with a 400, and native structured outputs (`output_config.format`) fail on `PortfolioDecision` with "Grammar compilation timed out". So `NormalizedChatAnthropicVertex` overrides `with_structured_output` with `llm_clients/claude_structured.py:auto_tool_structured_output`: the schema bound as the only tool with `tool_choice="auto"`, an answer-through-the-tool instruction appended, one re-ask when a reply carries no call, then `Schema.model_validate` on the call's arguments (a validation error raises at once — the fail-closed coercers still decide). The alpha-pulse contract harness answers a forced tool call on those models with the API's 400, so a path that forces one fails the suite.
+**Claude never forces the tool call (직접 API 와 Vertex 모두).** Claude Opus 5.5 / Sonnet 5.5 answer a forced `tool_choice` (`{"type": "tool"}` / `"any"`, what `ChatAnthropicVertex.with_structured_output` — 그리고 thinking 이 없을 때 `ChatAnthropic.with_structured_output` — sends) with a 400, and native structured outputs (`output_config.format`) fail on `PortfolioDecision` with "Grammar compilation timed out". 그래서 `NormalizedChatAnthropic`(공급자 `anthropic`, main.py 의 것)과 `NormalizedChatAnthropicVertex` 둘 다 mixin 하나 `llm_clients/claude_structured.py:ClaudeStructuredOutput` 을 LangChain 기반 클래스 앞에 둔다; 그 `with_structured_output` 이 `auto_tool_structured_output` 이다: the schema bound as the only tool with `tool_choice="auto"`, an answer-through-the-tool instruction appended, one re-ask when a reply carries no call, then `Schema.model_validate` on the call's arguments (a validation error raises at once — the fail-closed coercers still decide). The alpha-pulse contract harness answers a forced tool call on those models with the API's 400, so a path that forces one fails the suite.
 
 `agents/structured.py:invoke_structured_or_freetext` returns `(markdown, obj)` — `obj` is `None` on the free-text fallback. Render helpers (`render_research_plan`, `render_trader_proposal`, `render_pm_decision`) turn the Pydantic instance back into the legacy markdown shape so the rest of the system (memory log, CLI display, saved reports) keeps working unchanged. **Don't bypass the render helpers** — downstream consumers expect that exact shape. The PM's typed object is `portfolio_decision_obj`, which `main.py` prints as the `TRADE_PLAN_JSON:` line. Its plan numbers are fail-closed (`_coerce_plan_float`: only placeholders become `None`, an unreadable number fails the whole decision); upstream's salvaging `_coerce_optional_float` applies to `TraderProposal` only.
 
@@ -86,7 +90,7 @@ Research Manager, Trader, and Portfolio Manager use `llm.with_structured_output(
 
 **`backend_url` default is `None`** so each provider falls back to its native endpoint. Setting an OpenAI URL globally previously leaked into Gemini and produced malformed requests — never hardcode a provider URL in `DEFAULT_CONFIG`.
 
-Provider-specific kwargs for the tier LLMs come from `llm_clients/factory.py:build_llm_kwargs(config)`: `google_thinking_level`, `openai_reasoning_effort`, `anthropic_effort`, the `vertex_anthropic` knobs below, `temperature`, `llm_max_retries`, `max_tokens`. Model catalog (CLI options + validation source of truth) is `llm_clients/model_catalog.py`.
+Provider-specific kwargs for the tier LLMs come from `llm_clients/factory.py:build_llm_kwargs(config)`: `google_thinking_level`, `openai_reasoning_effort`, Claude 노브 `anthropic_effort` / `anthropic_max_tokens` / `anthropic_thinking`(`anthropic` 과 `vertex_anthropic` 에 같은 규칙, 아래 참고), `temperature`, `llm_max_retries`, `max_tokens`. `AnthropicClient.get_llm` 은 `effort` 를 ChatAnthropic 의 `effort` 필드로 넘기고(요청에서 `output_config.effort`, langchain-anthropic 1.5.6) `thinking` 약식을 `{"type": …}` 로 감싼다. ChatAnthropic 은 SDK 클라이언트를 `timeout=None` 으로 만들어 SDK 의 비스트리밍 "Streaming is required" 가드(SDK 기본 timeout 에서 ~21.3k 토큰)가 32000 토큰 요청을 막지 않는다(`tests/test_anthropic_direct.py` 가 고정). Model catalog (CLI options + validation source of truth) is `llm_clients/model_catalog.py`.
 
 ### Multi-model debate via Vertex Model Garden (v0.2.6)
 
@@ -107,11 +111,19 @@ optional deps with `pip install -e ".[vertex]"`.
 Enable from the CLI by picking **"Vertex Model Garden (multi-model debate)"** as the
 provider; it applies `cli/presets.py:VERTEX_DEBATE_PRESET` (judges=Claude, debaters
 diversified across Gemini/Claude/Grok, analysts+trader=Gemini) and prompts for the
-GCP project + location. Required env: `GOOGLE_CLOUD_PROJECT` (e.g. `tpmn-dev`),
+GCP project + location (기본 프로젝트 없음: `GOOGLE_CLOUD_PROJECT` 가 있으면 미리 채우고,
+없으면 빈 칸에서 시작). Required env: `GOOGLE_CLOUD_PROJECT`,
 optional `GOOGLE_CLOUD_LOCATION` (default `global`), and ADC via
 `gcloud auth application-default login` (or `GOOGLE_APPLICATION_CREDENTIALS`). It also
 works non-interactively via `TRADINGAGENTS_LLM_PROVIDER=vertex_model_garden` +
-`GOOGLE_CLOUD_PROJECT`. **`vertex_anthropic` thinking-config is wired**: config knobs
+`GOOGLE_CLOUD_PROJECT`. **main.py 는 더는 Vertex 에서 돌지 않는다**: 그 Claude 블록(같은 모델·effort·thinking·max_tokens)은 운영자의
+`ANTHROPIC_API_KEY` 로 직접 `anthropic` 공급자에서 돈다 — import 경로에 GCP 프로젝트·ADC·
+`[vertex]` extra 가 없다. main.py 는 `backend_url` 을 `None` 으로 고정한다(`_base_url_for` 는
+`vertex_*` 에만 None 을 주므로, 그러지 않으면 `TRADINGAGENTS_LLM_BACKEND_URL` 이
+`ChatAnthropic` 의 base_url 이 되어 요청과 키가 그리로 간다; 계약 시험이 고정).
+Vertex 공급자는 CLI 프리셋과 `role_models` 용으로 계속 지원한다.
+**`vertex_anthropic` thinking-config is wired** (직접 `anthropic` 공급자도 같은 노브를 같은
+규칙으로 받는다): config knobs
 `anthropic_effort`, `anthropic_max_tokens`, `anthropic_thinking` (env
 `TRADINGAGENTS_ANTHROPIC_{EFFORT,MAX_TOKENS,THINKING}`; also per-role in `role_models`)
 are computed in `build_llm_kwargs` (tier path) / `_provider_kwargs_for` (role path) and

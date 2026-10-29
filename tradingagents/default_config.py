@@ -27,7 +27,7 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_GOOGLE_THINKING_LEVEL":   "google_thinking_level",
     "TRADINGAGENTS_OPENAI_REASONING_EFFORT": "openai_reasoning_effort",
     "TRADINGAGENTS_ANTHROPIC_EFFORT":        "anthropic_effort",
-    # Vertex Claude (vertex_anthropic) only: output cap + thinking mode.
+    # Claude 공용(anthropic, vertex_anthropic): 출력 상한 + thinking 방식.
     "TRADINGAGENTS_ANTHROPIC_MAX_TOKENS":    "anthropic_max_tokens",
     "TRADINGAGENTS_ANTHROPIC_THINKING":      "anthropic_thinking",
 }
@@ -95,10 +95,11 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "google_thinking_level": "high",    # "high", "minimal", etc.
     "openai_reasoning_effort": None,    # "medium", "high", "low"
     "anthropic_effort": None,           # "high", "medium", "low"
-    # Vertex Claude (vertex_anthropic) only — routed into ChatAnthropicVertex
-    # model_kwargs. None => library defaults (max_tokens falls back to 4096,
-    # thinking off). See VertexAnthropicClient.get_llm and the provider-kwargs
-    # builder (llm_clients.factory.build_llm_kwargs).
+    # Claude 공용(anthropic, vertex_anthropic): AnthropicClient 는 ChatAnthropic 의
+    # max_tokens/thinking 필드로, VertexAnthropicClient 는 ChatAnthropicVertex 의
+    # model_kwargs 로 번역한다. None => 라이브러리 기본값(thinking 꺼짐; max_tokens 는
+    # ChatAnthropicVertex 에서 4096, ChatAnthropic 에서는 모델별 기본값). 번역은 두
+    # 클라이언트의 get_llm, 계산은 llm_clients.factory.build_llm_kwargs 가 한다.
     "anthropic_max_tokens": None,       # int output cap, e.g. 8192
     "anthropic_thinking": None,         # "adaptive" | "disabled" (shorthand for {"type": ...})
     # Sampling temperature, forwarded to every provider when set. None leaves

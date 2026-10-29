@@ -11,11 +11,13 @@ Replies come from the scenario's ``roles`` scripts:
 * analyst tool loops: ``tool_rounds[i]`` is returned as an AIMessage with
   ``tool_calls`` while ``i`` (= AI tool-call messages already in the prompt) is in
   range, filtered to the tools the node actually bound; then ``text``.
-* structured calls: at the ``"sdk"`` boundary the fake ChatAnthropicVertex's own
-  ``with_structured_output`` does what the real one does (forces the schema tool),
-  and the fork's ``NormalizedChatAnthropicVertex`` override replaces it with
-  ``tradingagents.llm_clients.claude_structured`` — so losing that override shows up
-  as the 400 below. At the ``"factory"`` boundary no fork client wraps the fake, so
+* structured calls: ``"sdk"`` 경계에서는 가짜 ChatAnthropic 자신의
+  ``with_structured_output`` 이 진짜처럼 한다(스키마 tool 을 강제하거나, thinking 이
+  켜져 있으면 ``tool_choice`` 없이 묶고 다시 묻지 않는다). fork 의
+  ``NormalizedChatAnthropic`` 덮어쓰기(공용 ``ClaudeStructuredOutput`` mixin)가 이를
+  ``tradingagents.llm_clients.claude_structured`` 로 바꾼다 — 그래서 덮어쓰기를 잃으면
+  아래의 400 이나 ``tool_choice`` 가 ``"auto"`` 가 아닌 구조화 호출로 드러난다.
+  At the ``"factory"`` boundary no fork client wraps the fake, so
   ``HarnessChatModel.with_structured_output`` runs that same fork path itself: the
   schema bound as the only tool with ``tool_choice="auto"``, an
   answer-through-the-tool instruction, one re-ask on a prose reply, then
@@ -35,11 +37,13 @@ Two installation boundaries (scenario ``llm_boundary``):
 * ``"factory"`` (default): ``create_llm_client`` is replaced wherever the fork
   bound it; the construction record holds (provider, model, base_url, kwargs) as
   the graph passed them.
-* ``"sdk"``: ``langchain_google_vertexai.model_garden.ChatAnthropicVertex`` is
-  replaced, so the fork's real client classes translate the config into SDK
-  kwargs; the record holds the SDK constructor kwargs. This fake SDK module is
-  installed in both modes as a backstop, so a code path that bypasses the
-  factory still cannot reach the network.
+* ``"sdk"``: ``langchain_anthropic.ChatAnthropic``(Vertex 를 떠난 뒤 main.py 의
+  ``anthropic`` 공급자가 만드는 것)을 fork 가 import 하기 전에 바꿔 넣는다. 그래서 fork 의
+  진짜 클라이언트 클래스(``AnthropicClient`` -> ``NormalizedChatAnthropic``)가 설정을 SDK
+  kwargs 로 번역하고, 기록에는 SDK 생성자 kwargs 가 남는다. 가짜 ``ChatAnthropic`` 과
+  가짜 ``langchain_google_vertexai.model_garden.ChatAnthropicVertex`` 는 두 모드 모두에
+  방어선으로 설치된다: factory 를 우회하는 경로도 네트워크에 닿지 못하고, Vertex 생성은
+  따로 기록으로 드러난다.
 """
 
 from __future__ import annotations
@@ -89,7 +93,8 @@ def model_of(llm_id: int) -> str | None:
     if not 0 <= llm_id < len(records):
         return None
     rec = records[llm_id]
-    return rec.get("model") or (rec.get("kwargs") or {}).get("model_name")
+    kwargs = rec.get("kwargs") or {}
+    return rec.get("model") or kwargs.get("model") or kwargs.get("model_name")
 
 
 def _tool_name(tool: Any) -> str:
@@ -152,7 +157,7 @@ class HarnessChatModel(BaseChatModel):
     def with_structured_output(self, schema: Any, *, include_raw: bool = False,
                                method: Any = None, **kwargs: Any):
         """Factory boundary: no fork client wraps this model, so it answers like the
-        object production builds (NormalizedChatAnthropicVertex): the fork's auto-tool path."""
+        object production builds (NormalizedChatAnthropic): the fork's auto-tool path."""
         self._record_binding(schema, include_raw, method, kwargs)
         # Imported here, not at module level: importing ``tradingagents`` runs its
         # load_dotenv(), which must happen when main.py imports it, not at harness boot.
@@ -294,8 +299,58 @@ class FakeChatAnthropicVertex(HarnessChatModel):
         return bound | RunnableLambda(_first_call)
 
 
+class FakeChatAnthropic(HarnessChatModel):
+    """``langchain_anthropic.ChatAnthropic``(직접 Anthropic API)의 대역.
+
+    fork 의 ``NormalizedChatAnthropic`` 은 ``anthropic_client`` 가 import 될 때
+    ``langchain_anthropic`` 패키지가 내놓는 ``ChatAnthropic`` 을 상속한다. 그래서 이 가짜가
+    자리에 있으면 fork 의 클래스(``invoke`` 정규화와 구조화 출력 mixin)가 대본 모델 위에서
+    돈다.
+    """
+
+    thinking: dict[str, Any] | None = None
+
+    def __init__(self, **kwargs: Any) -> None:
+        rec_id = record_construction("sdk", sdk_class="ChatAnthropic", kwargs=kwargs)
+        passthrough = {k: kwargs[k] for k in ("callbacks", "tags", "metadata") if k in kwargs}
+        super().__init__(harness_llm_id=rec_id, thinking=kwargs.get("thinking"), **passthrough)
+
+    def with_structured_output(self, schema: Any, *, include_raw: bool = False,
+                               method: Any = None, **kwargs: Any):
+        """진짜 ChatAnthropic(langchain-anthropic 1.5)이 하는 일: 스키마 tool 을 강제하고
+        첫 호출을 읽는다. thinking 이 enabled/adaptive 면 ``tool_choice`` 없이 묶고, 답에
+        호출이 없으면 (다시 묻지 않고) 실패한다. 5.5 모델에서 강제 호출은 400 이고,
+        thinking 쪽은 ``tool_choice`` None 을 보내 계약 시험이 fork 의 ``"auto"`` 와
+        구별한다."""
+        self._record_binding(schema, include_raw, method, kwargs)
+        thinking_on = (self.thinking or {}).get("type") in ("enabled", "adaptive")
+        bound = (self.bind_tools([schema]) if thinking_on
+                 else self.bind_tools([schema], tool_choice=_tool_name(schema)))
+
+        def _first_call(message: Any) -> Any:
+            calls = getattr(message, "tool_calls", None) or []
+            if not calls:
+                if thinking_on:
+                    raise ValueError("harness ChatAnthropic: no tool call with thinking on")
+                return None
+            if isinstance(schema, type) and hasattr(schema, "model_validate"):
+                return schema.model_validate(calls[0].get("args"))
+            return calls[0].get("args")
+
+        return bound | RunnableLambda(_first_call)
+
+
 def install_sdk_fakes() -> None:
-    """Put fake ``langchain_google_vertexai`` modules in sys.modules (both modes)."""
+    """가짜 SDK 채팅 클래스를 fork 가 import 하기 전에 (두 모드 모두) 자리에 둔다.
+
+    ``langchain_anthropic.ChatAnthropic`` 은 진짜 패키지 위에서 바꾼다(fork 는
+    ``from langchain_anthropic import ChatAnthropic`` 을 한다). ``langchain_google_vertexai``
+    는 sys.modules 의 가짜 모듈이다.
+    """
+    import langchain_anthropic
+
+    langchain_anthropic.ChatAnthropic = FakeChatAnthropic
+    langchain_anthropic.__harness_fake__ = True
     pkg = types.ModuleType("langchain_google_vertexai")
     pkg.__path__ = []  # a package, so ``import langchain_google_vertexai.model_garden`` resolves
     garden = types.ModuleType("langchain_google_vertexai.model_garden")

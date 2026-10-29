@@ -169,12 +169,31 @@ def test_vertex_anthropic_tier_kwargs_match_the_production_run():
 
 
 @pytest.mark.unit
-def test_vendor_direct_anthropic_gets_effort_but_not_the_vertex_knobs():
+def test_vendor_direct_anthropic_gets_the_same_knobs_as_vertex_claude():
+    """main.py 는 Vertex 대신 직접 Anthropic API 로 Claude 를 부른다. 직접 경로도
+    전용 상한·thinking·effort 를 Vertex 와 같은 규칙으로 받고, generic 상한이
+    전용 상한을 덮지 않는다."""
     kwargs = build_llm_kwargs({
         "llm_provider": "anthropic",
         "anthropic_effort": "high",
-        "anthropic_max_tokens": 20000,
+        "anthropic_max_tokens": 32000,
         "anthropic_thinking": "adaptive",
+        "temperature": None,
+        "llm_max_retries": None,
+        "max_tokens": "8000",  # TRADINGAGENTS_MAX_TOKENS arrives as a string
     })
 
-    assert kwargs == {"effort": "high"}
+    assert kwargs == {"effort": "high", "max_tokens": 32000, "thinking": "adaptive"}
+
+
+@pytest.mark.unit
+def test_vendor_direct_anthropic_coerces_the_dedicated_cap_and_keeps_generic_fallback():
+    assert build_llm_kwargs({"llm_provider": "anthropic",
+                             "anthropic_max_tokens": "16000"})["max_tokens"] == 16000
+    # 전용 값이 없으면 generic 값을 그대로 쓴다
+    assert build_llm_kwargs({"llm_provider": "anthropic", "anthropic_max_tokens": None,
+                             "max_tokens": 8192})["max_tokens"] == 8192
+    # thinking dict 는 그대로 넘긴다 (번역은 클라이언트가 한다)
+    assert build_llm_kwargs({"llm_provider": "anthropic",
+                             "anthropic_thinking": {"type": "adaptive", "display": "summarized"}}
+                            )["thinking"] == {"type": "adaptive", "display": "summarized"}

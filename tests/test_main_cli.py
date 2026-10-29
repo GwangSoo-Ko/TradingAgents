@@ -140,8 +140,8 @@ class TestMainWritesReports:
         assert text.startswith("# Trading Analysis Report: Micron Technology, Inc. (MU)\n\n"
                                "Generated: ")
         # The model table comes from main.build_config(): Opus judges, Sonnet elsewhere.
-        assert "| portfolio_manager | `vertex_anthropic` | `claude-opus-5-5` |" in text
-        assert "| trader *(tier default)* | `vertex_anthropic` | `claude-sonnet-5-5` |" in text
+        assert "| portfolio_manager | `anthropic` | `claude-opus-5-5` |" in text
+        assert "| trader *(tier default)* | `anthropic` | `claude-sonnet-5-5` |" in text
         assert (report.parent / "1_analysts" / "market.md").read_text(encoding="utf-8") == "MKT"
         assert (report.parent / "5_portfolio" / "decision.md").read_text(
             encoding="utf-8") == "**Rating**: Buy"
@@ -224,13 +224,17 @@ def test_the_result_lines_come_last_after_a_trace_that_mimics_them(
 
 
 @pytest.mark.unit
-def test_build_config_is_the_korean_vertex_run_the_consumer_relies_on():
+def test_build_config_is_the_korean_direct_claude_run_the_consumer_relies_on():
     """The runner's config is part of what the consumer gets: Korean output, the
     KR vendor chains (they refuse non-KR tickers, so US runs fall through to
-    yfinance), 종목토론방 sentiment, the tiered Vertex Claude models. A merge that
-    re-bases build_config on upstream's defaults changes every run silently."""
+    yfinance), 종목토론방 sentiment, the tiered Claude models. A merge that
+    re-bases build_config on upstream's defaults changes every run silently.
+
+    Claude 는 Anthropic API 를 직접 부른다(ANTHROPIC_API_KEY; GCP 프로젝트도 Vertex 도 없음)."""
     cfg = m.build_config()
-    assert cfg["llm_provider"] == "vertex_anthropic"
+    assert cfg["llm_provider"] == "anthropic"
+    assert cfg["backend_url"] is None  # SDK 자신의 엔드포인트(api.anthropic.com)
+    assert cfg["vertex_project"] is None and cfg["vertex_location"] is None
     assert (cfg["deep_think_llm"], cfg["quick_think_llm"]) == ("claude-opus-5-5", "claude-sonnet-5-5")
     assert (cfg["anthropic_thinking"], cfg["anthropic_max_tokens"], cfg["anthropic_effort"]) == (
         "adaptive", 32000, "high")
@@ -240,7 +244,7 @@ def test_build_config_is_the_korean_vertex_run_the_consumer_relies_on():
     assert cfg["enable_kr_discussion_sentiment"] is True
     assert cfg["position_context_from_env"] is True  # the PM-only account channel
     assert cfg["role_models"] == {
-        role: {"provider": "vertex_anthropic", "model": "claude-opus-5-5",
+        role: {"provider": "anthropic", "model": "claude-opus-5-5",
                "anthropic_effort": "xhigh"}
         for role in ("research_manager", "portfolio_manager")
     }
@@ -258,7 +262,8 @@ def test_every_role_gets_the_runners_model_and_effort(monkeypatch, tmp_path, gen
     effort high, all with max_tokens 32000 and adaptive thinking -- and nothing else
     (no temperature, no retry override). A merge that routes a judge through the
     deep tier, drops a per-role effort or lets the generic max_tokens replace the
-    Vertex cap changes the production run without failing anything else."""
+    dedicated cap changes the production run without failing anything else (전용 상한은
+    이제 직접 API 공급자 anthropic 의 것)."""
     import tradingagents.graph.trading_graph as tg
 
     built = {}
@@ -276,15 +281,46 @@ def test_every_role_gets_the_runners_model_and_effort(monkeypatch, tmp_path, gen
     graph = tg.TradingAgentsGraph(debug=True, config=cfg)
 
     def spec(model, effort):
-        return {"provider": "vertex_anthropic", "model": model, "base_url": None,
-                "effort": effort, "max_tokens": 32000, "thinking": "adaptive",
-                "project": None, "location": None}
+        # 직접 API: Vertex project/location kwargs 가 없고, SDK 자신의 엔드포인트를 쓴다.
+        return {"provider": "anthropic", "model": model, "base_url": None,
+                "effort": effort, "max_tokens": 32000, "thinking": "adaptive"}
 
     for role in sorted(tg.ROLE_KEYS):
         want = spec("claude-opus-5-5", "xhigh") if role in _JUDGES else spec("claude-sonnet-5-5", "high")
         assert built[id(graph._llm_for(role))] == want, role
     assert built[id(graph.reflector.quick_thinking_llm)] == spec("claude-sonnet-5-5", "high")
     assert len(tg.ROLE_KEYS) == 12
+
+
+@pytest.mark.unit
+def test_a_stray_backend_url_never_reaches_the_claude_clients(monkeypatch, tmp_path):
+    """TRADINGAGENTS_LLM_BACKEND_URL(환경 변수, 또는 tradingagents 가 cwd 와 그 위에서 찾는
+    .env/.env.enterprise)은 DEFAULT_CONFIG['backend_url'] 이 된다. Vertex 공급자에는 resolver
+    가 base_url 을 주지 않아 그 값이 남아 있어도 아무 일이 없었지만, 직접 anthropic 공급자는
+    그것을 ChatAnthropic(base_url=...) 으로 쓴다 — 모든 Claude 요청이 운영자의
+    ANTHROPIC_API_KEY 를 실은 채 그 엔드포인트로 간다. main.py 는 그 값을 None 으로 고정해
+    SDK 자신의 엔드포인트(api.anthropic.com)를 쓴다. conftest 가 TRADINGAGENTS_* 를 비우므로
+    값은 DEFAULT_CONFIG 에 직접 넣는다(import 때 env 를 읽은 결과와 같은 자리)."""
+    import tradingagents.graph.trading_graph as tg
+
+    monkeypatch.setitem(m.DEFAULT_CONFIG, "backend_url", "https://example.invalid/v1")
+    built = {}
+
+    def record(**kwargs):
+        llm = object()
+        built[id(llm)] = kwargs
+        return types.SimpleNamespace(get_llm=lambda: llm)
+
+    monkeypatch.setattr(tg, "create_llm_client", record)
+    cfg = m.build_config()
+    assert cfg["backend_url"] is None
+    graph = tg.TradingAgentsGraph(debug=True, config={
+        **cfg, "results_dir": str(tmp_path / "results"),
+        "data_cache_dir": str(tmp_path / "cache"),
+        "memory_log_path": str(tmp_path / "memory.md")})
+    llms = [graph._llm_for(role) for role in sorted(tg.ROLE_KEYS)]
+    llms.append(graph.reflector.quick_thinking_llm)
+    assert {built[id(llm)]["base_url"] for llm in llms} == {None}
 
 
 @pytest.mark.unit

@@ -4,9 +4,9 @@ Usage:
     python main.py TICKER [DATE]
 
 TICKER is required (e.g. NVDA, MU, 005930.KS). DATE is optional (YYYY-MM-DD or
-YYYYMMDD) and defaults to today in the process's time zone (TZ). The run config
-below is a tiered Vertex Model Garden run on Claude — edit or comment out
-``build_config`` to fall back to DEFAULT_CONFIG.
+YYYYMMDD) and defaults to today in the process's time zone (TZ). 아래 실행 설정은
+Anthropic API 를 직접 부르는(ANTHROPIC_API_KEY) 계층형 Claude 실행이다 —
+``build_config`` 를 고치거나 주석 처리하면 DEFAULT_CONFIG 로 돌아간다.
 """
 
 import argparse
@@ -49,26 +49,34 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 
 def build_config() -> dict:
-    """DEFAULT_CONFIG plus a tiered Vertex Claude run.
+    """DEFAULT_CONFIG 에 Anthropic API 직접 호출의 계층형 Claude 실행을 더한다.
 
-    No vendor API key — ADC auth + the optional [vertex] extra; needs
-    GOOGLE_CLOUD_PROJECT and ``gcloud auth application-default login``. The two
-    deep judges (Research/Portfolio Manager) run Opus 5.5 at xhigh effort; every
-    other role runs Sonnet 5.5 at high effort. thinking/max_tokens are shared;
-    vertex_project/location resolve from GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION
-    (default "global"). Comment the update out to fall back to DEFAULT_CONFIG
-    (OpenAI + .env).
+    필요한 것은 ANTHROPIC_API_KEY(환경 변수 또는 .env) 하나다: 공급자 ``anthropic`` 은
+    langchain-anthropic 의 ChatAnthropic(기본 의존성)을 만들어 api.anthropic.com 을
+    직접 부른다 — GCP 프로젝트도, ADC 도, [vertex] extra 도 필요 없다. 두 심판
+    (Research/Portfolio Manager)은 Opus 5.5 effort xhigh, 나머지 역할은 모두 Sonnet 5.5
+    effort high 다. thinking/max_tokens 는 공통이다. 구조화 호출(Research Manager,
+    Trader, Portfolio Manager)은 스키마를 유일한 tool 로 tool_choice "auto" 로 묶는다:
+    5.5 모델은 강제 tool 호출을 400 으로 거절한다. update 를 주석 처리하면
+    DEFAULT_CONFIG(OpenAI + .env)로 돌아간다.
 
-    Thinking counts toward max_tokens. Measured on Vertex (2026-10-01, KR run,
-    12-20k input tokens): Opus 5.5 at effort max spent all of 20000 on thinking in
-    every judge call (no tool call -> no TRADE_PLAN_JSON); at xhigh the judges used
-    11-13k; the Sonnet 5.5 bear researcher at high reached 19.4k. 32000 leaves room
-    for both. ChatAnthropicVertex builds its SDK client with timeout=None, so the
-    SDK's non-streaming "streaming required" guard (~21.3k) does not apply here.
+    thinking 은 max_tokens 에 포함된다. 같은 모델을 Vertex 에서 잰 값(2026-10-01, KR
+    실행, 입력 1.2~2만 토큰): Opus 5.5 effort max 는 모든 심판 호출에서 20000 을 다
+    thinking 에 썼다(tool 호출 없음 -> TRADE_PLAN_JSON 없음). xhigh 에서 심판은 1.1~1.3만,
+    Sonnet 5.5 bear researcher(high)는 1.94만까지 썼다. 32000 은 둘 다에 여유가 있다.
+    ChatAnthropic 은 SDK 클라이언트를 timeout=None(default_request_timeout)으로 만들어,
+    SDK 의 비스트리밍 "Streaming is required" 가드(SDK 기본 timeout 에서 ~21.3k)가 여기에는
+    걸리지 않는다: 32000 토큰 비스트리밍 요청이 그대로 나간다
+    (tests/test_anthropic_direct.py 가 고정).
     """
     config = DEFAULT_CONFIG.copy()
     config.update({
-        "llm_provider": "vertex_anthropic",
+        "llm_provider": "anthropic",         # 직접 API(ANTHROPIC_API_KEY), Vertex 아님
+        # SDK 자신의 엔드포인트(api.anthropic.com)로 고정한다. DEFAULT_CONFIG 의 backend_url 은
+        # TRADINGAGENTS_LLM_BACKEND_URL(환경 변수나 cwd 와 그 위의 .env)에서 올 수 있고,
+        # 직접 anthropic 공급자는 그것을 ChatAnthropic(base_url=...) 으로 써서 모든 요청과
+        # API 키를 그 엔드포인트로 보낸다(vertex_* 공급자는 그 값을 쓰지 않았다).
+        "backend_url": None,
         "deep_think_llm": "claude-opus-5-5",
         "quick_think_llm": "claude-sonnet-5-5",
         "anthropic_thinking": "adaptive",
@@ -99,11 +107,11 @@ def build_config() -> dict:
         "position_context_from_env": True,
         "role_models": {                     # override the two deep judges -> Opus / xhigh
             "research_manager": {
-                "provider": "vertex_anthropic", "model": "claude-opus-5-5",
+                "provider": "anthropic", "model": "claude-opus-5-5",
                 "anthropic_effort": "xhigh",
             },
             "portfolio_manager": {
-                "provider": "vertex_anthropic", "model": "claude-opus-5-5",
+                "provider": "anthropic", "model": "claude-opus-5-5",
                 "anthropic_effort": "xhigh",
             },
         },

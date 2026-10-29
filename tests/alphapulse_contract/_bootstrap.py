@@ -194,7 +194,7 @@ def main() -> None:
                     rt.CAPTURES["factory_patched_in"] = _fake_llm.install_factory_fake()
                 except Exception as exc:  # noqa: BLE001
                     rt.note(f"factory fake not installed ({type(exc).__name__}: {exc}); the "
-                            "fake Vertex SDK class still stands in for the model")
+                            "fake SDK chat classes still stand in for the model")
             _install_propagate_spy(rt, graph_cls)
         rt.CAPTURES["imports"].update(_module_files())
         rt.flush()

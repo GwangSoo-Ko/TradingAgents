@@ -470,8 +470,9 @@ def ask_vertex_config() -> tuple[str, str]:
     # prompts instead of raising AttributeError on .strip().
     project = questionary.text(
         "Enter your GCP project ID for Vertex AI:",
-        # GOOGLE_CLOUD_PROJECT wins; otherwise pre-fill the common default.
-        default=os.environ.get("GOOGLE_CLOUD_PROJECT") or "tpmn-dev",
+        # GOOGLE_CLOUD_PROJECT 가 있으면 그 값으로 채운다. 없으면 빈 칸에서 시작한다
+        # (기댈 기본 프로젝트가 없다); 아래 검증이 입력을 요구한다.
+        default=os.environ.get("GOOGLE_CLOUD_PROJECT") or "",
         validate=lambda x: len(x.strip()) > 0 or "Please enter a project ID.",
     ).ask()
     if project is None:

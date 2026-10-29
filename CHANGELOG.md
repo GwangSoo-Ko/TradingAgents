@@ -10,6 +10,35 @@ Changes that need action when upgrading are listed first in their release.
 
 Fork additions (not yet in an upstream release).
 
+### Changed — 업그레이드 때 조치 필요
+
+- **`main.py` 의 Claude 호출이 Vertex 에서 직접 Anthropic API 로 옮겨졌다.** `main.build_config()` 의 계층 공급자와 role_models 두 심판(Research /
+  Portfolio Manager)이 `anthropic` 이 되었다. **운영자는 `ANTHROPIC_API_KEY` 를 줘야 한다**
+  (환경 변수 또는 `.env`). `GOOGLE_CLOUD_PROJECT`·ADC·`[vertex]` extra 는 main.py 에 더는
+  필요 없다(import 경로에 없음을 확인). 모델(심판 `claude-opus-5-5` effort `xhigh`, 나머지
+  `claude-sonnet-5-5` `high`)·adaptive thinking·`anthropic_max_tokens` 32000·한국어·KR
+  벤더는 그대로다. `pyproject.toml` 은 바뀌지 않았다(`langchain-anthropic` 은 원래 기본
+  의존성). 보고서 머리의 모델 표 공급자는 `anthropic`, 분석 모드 태그는 `multimodel` 로
+  보인다. alpha-pulse 계약 시험은 같은 강도로 직접 경로(진짜 `ChatAnthropic` + 가짜
+  전송층 재생)를 고정한다. main.py 는 `backend_url` 을 `None` 으로 고정한다: Vertex
+  공급자에는 쓰이지 않던 `TRADINGAGENTS_LLM_BACKEND_URL`(환경 변수나 cwd 와 그 위의
+  `.env`)이 직접 공급자에서는 모든 Claude 요청과 API 키를 그 엔드포인트로 보냈을 것이다.
+  엔드포인트를 바꾸는 것은 SDK 노브 `ANTHROPIC_API_URL`·`ANTHROPIC_BASE_URL`·
+  `LANGSMITH_GATEWAY` 뿐이다.
+- **직접 `anthropic` 공급자도 `anthropic_max_tokens`·`anthropic_thinking` 을 받는다**
+  (전에는 `anthropic_effort` 만). `vertex_anthropic` 과 같은 규칙: 전용 상한이 일반
+  `max_tokens` 보다 우선, thinking 의 `"adaptive"`/`"disabled"` 약식은 `{"type": …}`.
+  `TRADINGAGENTS_ANTHROPIC_{MAX_TOKENS,THINKING}` 을 이미 설정해 두고 직접 API 를 쓰던
+  설정이라면 이제 그 값이 적용된다. effort 는 ChatAnthropic 의 `effort` 필드로 넘어가
+  요청의 `output_config.effort` 가 된다(langchain-anthropic 1.5.6 에서 요청 본문으로 확인).
+  ChatAnthropic 은 SDK 클라이언트를 `timeout=None` 으로 만들어, SDK 의 비스트리밍
+  "Streaming is required" 가드가 32000 토큰 요청을 막지 않는다(시험으로 고정).
+- **직접 API 의 구조화 출력도 tool 호출을 강제하지 않는다.** `NormalizedChatAnthropic` 이
+  Vertex Claude 와 같은 `claude_structured.ClaudeStructuredOutput` mixin 을 쓴다(전에는
+  `ChatAnthropic.with_structured_output` 이 thinking 없이 tool 을 강제해 5.5 모델에서 400).
+- **CLI 의 Vertex GCP 프로젝트 질문에 기본값이 없다.** `GOOGLE_CLOUD_PROJECT` 가 없으면
+  하드코딩된 프로젝트 ID 를 미리 채우던 것을 없앴다: 빈 칸에서 시작해 입력을 요구한다.
+
 ### Changed
 
 - **`main.py` runs Claude Opus 5.5 / Sonnet 5.5 on Vertex** (`claude-opus-5-5` for the
@@ -30,6 +59,11 @@ Fork additions (not yet in an upstream release).
 
 ### Added
 
+- **`scripts/smoke_anthropic_thinking.py`**: main.py 블록의 직접 API 실호출 스모크
+  (`ANTHROPIC_API_KEY`, 빠른 계층 일반 호출 1 + PM 심판 구조화 호출 1). `--dry-run` 은 키
+  없이 요청 쌍과 본문을 출력한다.
+- 모델 카탈로그의 `anthropic` 빠른 계층에 `claude-sonnet-5-5` (없으면 main.py 가 실행마다
+  unknown-model 경고를 냈다).
 - **`portfolio_notice_when_absent`** (default `True`). Upstream v0.5.1 tells the
   Trader, the risk debaters and the Portfolio Manager "Portfolio context: not
   provided" whenever the caller passes no portfolio. `main.py` sets it `False`:

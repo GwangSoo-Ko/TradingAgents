@@ -14,7 +14,7 @@ They do not freeze internals. They freeze exactly what alpha-pulse consumes:
 | report tree (`complete_report.md` + section files) | web report view, discovery deep report |
 | env semantics: `TRADINGAGENTS_{RESULTS_DIR,CACHE_DIR,MEMORY_LOG_PATH,CHECKPOINT_ENABLED,POSITION_CONTEXT}` (`''` = not injected) | set for every run: per-run paths, a per-ticker memory log, checkpoints off, the account JSON or `''` |
 | account context reaches the Portfolio Manager only (holdings + Founding Thesis + revision instruction); account numbers scrubbed from the archived memory-log copy only | its revision gate assumes the PM saw the thesis it sent |
-| per-role LLM: RM/PM `claude-opus-5-5` effort xhigh, all other roles `claude-sonnet-5-5` effort high, `max_tokens` 32000, thinking adaptive, Vertex (`GOOGLE_CLOUD_PROJECT`, location `global`), Korean output, KR vendors | production runs `main.build_config()` unmodified |
+| per-role LLM: RM/PM `claude-opus-5-5` effort xhigh, all other roles `claude-sonnet-5-5` effort high, `max_tokens` 32000, thinking adaptive, 구조화 호출은 `tool_choice` auto, 직접 Anthropic API(공급자 `anthropic`, `ANTHROPIC_API_KEY`; GCP 프로젝트·ADC·Vertex SDK 없음), Korean output, KR vendors | production runs `main.build_config()` unmodified |
 
 Contract docs on the fork side: `docs/INTEGRATION.md` (§1b the output and the plan
 contract, §4 `TRADINGAGENTS_POSITION_CONTEXT`) and main.py's comments.
@@ -55,11 +55,14 @@ way alpha-pulse does — `python tests/alphapulse_contract/_bootstrap.py <run_di
 — and fakes only external boundaries:
 
 * **LLM** — a scripted langchain `BaseChatModel` (`_fake_llm.py`) installed at
-  `create_llm_client` (`llm_boundary: "factory"`, default) or at the Vertex SDK class
-  `ChatAnthropicVertex` (`llm_boundary: "sdk"`, so the fork's real kwargs translation
-  runs). Structured output mirrors `ChatAnthropicVertex.with_structured_output`: the raw
-  dict is validated by the fork's real pydantic schema, so real validators/coercers run
-  and a ValidationError drives the fork's real free-text fallback.
+  `create_llm_client` (`llm_boundary: "factory"`, default) 또는 SDK 클래스
+  `langchain_anthropic.ChatAnthropic` (`llm_boundary: "sdk"`: fork 의 진짜 kwargs 번역과,
+  공용 구조화 출력 mixin 을 단 `NormalizedChatAnthropic` 이 그 위에서 돈다). 가짜의
+  `with_structured_output` 은 진짜 `ChatAnthropic` 을 따라 한다(tool 강제; thinking 이
+  켜져 있으면 `tool_choice` 없이, 다시 묻지 않음). 5.5 모델에 대한 강제 tool 호출에는 API 의
+  400 으로 답한다. The raw dict is validated by the fork's real pydantic schema, so real
+  validators/coercers run and a ValidationError drives the fork's real free-text fallback.
+  가짜 `ChatAnthropicVertex` 는 방어선으로 계속 설치된다.
 * **Data** — at the library layer (`_fake_data.py`): `yfinance.Ticker/download/Search`
   serve `fixtures/instruments.json` plus a deterministic price path; `requests`
   (`HTTPAdapter.send`) and `urllib` (`OpenerDirector.open`) serve
@@ -68,7 +71,8 @@ way alpha-pulse does — `python tests/alphapulse_contract/_bootstrap.py <run_di
   recorded; unknown URLs get a 404 and are recorded as `unrouted`.
 * **Environment** — built from scratch (nothing inherited from your shell): HOME,
   TMPDIR, results/cache/memory under the run dir, `TZ=Asia/Seoul`,
-  `GOOGLE_CLOUD_PROJECT=tpmn-dev`, `PYTHONUNBUFFERED=1`, `PYTHONDONTWRITEBYTECODE=1`,
+  `ANTHROPIC_API_KEY` 자리표시자(`GOOGLE_*` 없음), `PYTHONUNBUFFERED=1`,
+  `PYTHONDONTWRITEBYTECODE=1`,
   per-ticker memory log, checkpoints off. `.env` lookup is fenced (a nested worktree
   would otherwise load the main checkout's real `.env`); a scenario can supply its own.
 * **Clock** — `time.sleep` is recorded, not slept (vendor pacing/backoff).
@@ -100,10 +104,11 @@ Two environment gates, both reported as skips (with the reason) rather than fail
   CPython 3.11; on 3.10 main.py rejects the nightly `YYYYMMDD` date (3.10's
   `date.fromisoformat` does not read the basic format), so the fork's 3.10 CI lane
   cannot hold this contract by construction.
-* **No Vertex SDK**: `test_real_vertex_sdk_sends_the_production_request_for_each_role`
-  replays the recorded constructor kwargs through the REAL `ChatAnthropicVertex`; the
-  fork's CI installs only `.[dev]`, so there it is skipped. Install `.[vertex]` (as
-  production does) to run it. Every other test uses the harness's fake SDK class.
+* wire 재생(`test_real_sdk_sends_the_production_request_for_each_role`,
+  `test_real_sdk_structured_call_lets_the_model_choose_the_tool`)은 기록된 생성자 kwargs 를
+  진짜 langchain-anthropic + anthropic SDK 위의 fork `NormalizedChatAnthropic` 으로
+  재생한다(HTTP 전송층만 가짜). 둘 다 기본 의존성이라 건너뛰지 않는다(Vertex 를 떠나기
+  전에는 `ChatAnthropicVertex` 로 재생했고 `[vertex]` extra 가 없으면 건너뛰었다).
 
 ### Accepted drift (flipped in the upstream v0.5.1 merge)
 
@@ -169,7 +174,7 @@ Every test here must stay GREEN on the fork as production runs it and must go RE
 breakage its docstring names. Check that before relying on a test: copy the tree to a
 scratch directory (`rsync -a --exclude=.git --exclude=__pycache__ <repo>/ <scratch>/`),
 apply the breakage there (for example upstream's `_coerce_optional_float`, the v0.5.1
-last-label rating parser, a lost `position_context`, dropped Vertex kwargs), and run the
+last-label rating parser, a lost `position_context`, dropped Claude kwargs), and run the
 test file from the copy — it must fail. Never mutate the real checkout.
 
 ## Files
@@ -188,7 +193,7 @@ test file from the copy — it must fail. Never mutate the real checkout.
 | `test_alphapulse_trade_plan_contract.py` | plan schema: fields, types, vocabularies, the pre-2026-08 shape rejected, all-or-nothing numbers |
 | `test_alphapulse_account_contract.py` | account context reaches the PM only; scrub of the archived copy |
 | `test_alphapulse_memory_contract.py` (+ `_memory_helpers.py`) | per-ticker memory log, settlement, benchmarks, checkpoints off |
-| `test_alphapulse_llm_contract.py` (+ `_llm_helpers.py`) | per-role Vertex kwargs, the real SDK's request, Korean output, KR data config |
+| `test_alphapulse_llm_contract.py` (+ `_llm_helpers.py`) | 역할별 직접 API kwargs, 진짜 SDK 의 요청(일반·구조화), GCP 없음, Korean output, KR data config |
 | `test_alphapulse_data_contract.py` | vendor routing, KR vendors, AV cross-check, Yahoo throttle fails the run |
 | `test_alphapulse_deploy_contract.py` (+ `_deploy_helpers.py`) | pyproject/venv rebuild, 3.11 syntax, import side effects, declared dependencies |
 | `test_alphapulse_merge_expectations.py` (+ `_merge_expectations_helpers.py`) | the expected-drift xfails above |

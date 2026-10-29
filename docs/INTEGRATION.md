@@ -83,12 +83,14 @@ The decision line is the Portfolio Manager's typed rating (the same value as
 the parsed signal, `REVIEW` when no rating is readable.
 
 > ⚠️ `main.py` carries a **hard-coded run config** (`build_config()` — currently a
-> tiered Vertex Claude setup: Opus 5.5 (`claude-opus-5-5`) at effort xhigh for the Research
+> tiered Claude setup on the **직접 Anthropic API** (공급자 `anthropic`; `ANTHROPIC_API_KEY`
+> 하나만 필요하고 GCP 는 필요 없다 — §4 참고): Opus 5.5 (`claude-opus-5-5`) at effort xhigh for the Research
 > and Portfolio Managers via `role_models`, Sonnet 5.5 (`claude-sonnet-5-5`) at effort high
 > for every other role, `max_tokens` 32000 (thinking counts toward it), adaptive thinking,
 > Korean output, KR vendor chains, all four analysts, `portfolio_notice_when_absent:
 > False`). Their structured calls (Research Manager, Trader, Portfolio Manager, sentiment)
-> go through `llm_clients/claude_structured.py`: the 5.5 models reject a forced
+> go through `llm_clients/claude_structured.py` (`NormalizedChatAnthropic` 과 Vertex Claude
+> 클래스가 함께 쓰는 `ClaudeStructuredOutput` mixin): the 5.5 models reject a forced
 > `tool_choice`, so the schema tool is offered with `tool_choice="auto"`, and a reply that
 > stopped at `max_tokens`/`refusal` is a miss (free-text fallback, no `TRADE_PLAN_JSON`).
 > Shelling out to `main.py` uses
@@ -301,7 +303,10 @@ Every key has a `TRADINGAGENTS_*` env override (see `_ENV_OVERRIDES`), e.g.
 `TRADINGAGENTS_LLM_PROVIDER`, `TRADINGAGENTS_DEEP_THINK_LLM`,
 `TRADINGAGENTS_ANTHROPIC_EFFORT`, `TRADINGAGENTS_CACHE_DIR`. The tier LLMs' kwargs
 come from `tradingagents.llm_clients.build_llm_kwargs(config)`; a `role_models`
-entry's from `TradingAgentsGraph._provider_kwargs_for(spec)`.
+entry's from `TradingAgentsGraph._provider_kwargs_for(spec)`. 두 경로 모두
+`anthropic_effort` / `anthropic_max_tokens`(일반 `max_tokens` 보다 우선) /
+`anthropic_thinking`(`"adaptive"`/`"disabled"` 약식 또는 dict)을 직접 `anthropic` 공급자와
+`vertex_anthropic` 에 같은 규칙으로 적용한다.
 
 ---
 
@@ -317,8 +322,28 @@ function**: it reads env, writes to disk, and calls the network.
   `OPENROUTER_API_KEY`, `AZURE_OPENAI_*`, … `OLLAMA_BASE_URL` for local.
 - **Data-vendor keys** (only if that vendor is routed): `ALPHA_VANTAGE_API_KEY`,
   `FRED_API_KEY`, `DART_API_KEY` (KR), etc. — vendors quiet-skip when unconfigured.
-- **Vertex (optional `[vertex]`):** `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`
-  (default `global`), ADC via `GOOGLE_APPLICATION_CREDENTIALS` — **no vendor key**.
+- **`main.py`(alpha-pulse 러너)에 필요한 LLM 자격 증명은 `ANTHROPIC_API_KEY` 하나다**
+  (환경 변수 또는 `.env`). Claude 블록은 직접 `anthropic` 공급자에서 돈다:
+  `langchain-anthropic` 의 `ChatAnthropic`(기본 의존성, `anthropic` SDK 를 함께 가져옴)이
+  `api.anthropic.com` 을 부른다. `GOOGLE_CLOUD_PROJECT`·ADC·`[vertex]` extra 는 필요 없다:
+  main.py 의 import·그래프 생성 경로(`main` → `tradingagents.graph.trading_graph` →
+  `llm_clients/factory.py`, 이것은 `anthropic_client.py` 만 지연 import)에서 Vertex 나
+  google-auth 모듈은 import 되지 않는다 — `langchain_google_vertexai`, `vertexai`,
+  `google.auth`, `google.cloud`, `google.oauth2` 를 막은 하위 프로세스에서 main.py 의
+  그래프를 만들어 확인했다: 모든 역할이 `NormalizedChatAnthropic` 으로 만들어졌고 막힌
+  모듈은 한 번도 찾지 않았다. 아직 `'.[vertex]'` 로 설치하는 소비자도 그대로 동작한다
+  (extra 는 계속 선언돼 있다); main.py 가 쓰지 않을 뿐이다.
+- **main.py 의 Claude 엔드포인트.** main.py 는 `backend_url` 을 `None` 으로 고정하므로
+  `TRADINGAGENTS_LLM_BACKEND_URL`(환경 변수나 `.env`)은 main.py 의 Claude 호출에 쓰이지
+  않는다(Vertex 시절에는 resolver 가 `vertex_*` 에 그 값을 주지 않아 효과가 없었고, 직접
+  `anthropic` 공급자는 그 값을 `ChatAnthropic(base_url=…)` 로 써서 요청과 키를 그리로
+  보냈을 것이다). 엔드포인트를 바꾸는 것은 SDK 표준 노브뿐이다: langchain-anthropic 은
+  명시 `base_url` 이 없으면 `ANTHROPIC_API_URL`, `ANTHROPIC_BASE_URL`, 그다음
+  `LANGSMITH_GATEWAY` 순으로 읽는다(langchain-anthropic 1.5.6 에서 확인). 운영 환경에는
+  이 셋을 두지 않는다.
+- **Vertex (optional `[vertex]`, `vertex_*` 공급자만):** `GOOGLE_CLOUD_PROJECT`
+  (내장 기본값 없음), `GOOGLE_CLOUD_LOCATION` (default `global`), ADC via
+  `GOOGLE_APPLICATION_CREDENTIALS` — **no vendor key**.
 - **Config overlay:** all `TRADINGAGENTS_*` (see §3).
 - **`TRADINGAGENTS_POSITION_CONTEXT`** — a one-line JSON account/position
   snapshot, read once per run by `create_run_state()`
@@ -392,7 +417,12 @@ Rooted at `~/.tradingagents/`; override the base with **`TRADINGAGENTS_CACHE_DIR
 - **yfinance** (default vendor: prices/indicators/fundamentals/news/Search) — always.
 - **Reddit (RSS) + StockTwits** — keyless; fetched by the sentiment analyst every run.
 - **Keyed vendors** when routed: Alpha Vantage, FRED, Polymarket, SEC EDGAR, KR (Naver/DART/wisereport).
-- **LLM provider APIs** per `llm_provider` (or Vertex via ADC).
+- **LLM provider APIs** per `llm_provider` (or Vertex via ADC). `main.py`:
+  `https://api.anthropic.com/v1/messages` 만 (`max_tokens` 32000 비스트리밍 요청;
+  ChatAnthropic 의 SDK 클라이언트에는 timeout 이 없어 SDK 의 "Streaming is required"
+  가드가 막지 않는다). `TRADINGAGENTS_LLM_BACKEND_URL` 이 있어도 그렇다(위 Environment
+  variables 의 "main.py 의 Claude 엔드포인트"); 바꾸는 것은 SDK 노브 `ANTHROPIC_API_URL`·`ANTHROPIC_BASE_URL`·
+  `LANGSMITH_GATEWAY` 뿐이다.
 
 ### Global state to isolate
 `propagate()` scopes its config per run (§3); the process-global copy still backs
@@ -429,7 +459,8 @@ whose OS CA bundle isn't linked; keep certifi if you vendor those vendors.
 **Per-provider LangChain packages** are only needed for the provider you actually
 build: keep `langchain-openai` (imported at module top of `openai_client.py`);
 `langchain-anthropic` / `langchain-google-genai` are needed only if you keep those
-client files. `llm_clients/` couples to **nothing** in `tradingagents`, so you can
+client files (`main.py` 는 `langchain-anthropic` 이 필요하다: Claude 호출이
+`anthropic_client.py` 를 쓴다). `llm_clients/` couples to **nothing** in `tradingagents`, so you can
 vendor just the providers you use.
 
 ---

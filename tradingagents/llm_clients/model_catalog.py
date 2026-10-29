@@ -111,6 +111,7 @@ MODEL_OPTIONS: ProviderModeOptions = {
     },
     "anthropic": {
         "quick": [
+            ("Claude Sonnet 5.5 - Current Sonnet: speed and capability", "claude-sonnet-5-5"),
             ("Claude Sonnet 5 - Best speed and intelligence balance", "claude-sonnet-5"),
             ("Claude Haiku 4.5 - Fastest with near-frontier intelligence", "claude-haiku-4-5"),
             ("Custom model ID", "custom"),

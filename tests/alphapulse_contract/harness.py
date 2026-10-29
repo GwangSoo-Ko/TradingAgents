@@ -10,7 +10,8 @@
 ``run_main`` launches ``<python> _bootstrap.py <run_dir>`` with cwd = repo root and
 an environment built from scratch (nothing inherited from the developer's shell):
 HOME, TMPDIR and every TradingAgents path under ``run_dir``; TZ=Asia/Seoul;
-GOOGLE_CLOUD_PROJECT=tpmn-dev (the fork's documented example project);
+ANTHROPIC_API_KEY 는 하네스 자리표시자(main.py 는 Anthropic API 를 직접 부른다;
+GOOGLE_* 는 두지 않아 아직 GCP 가 필요한 경로가 생기면 드러난다);
 PYTHONUNBUFFERED=1; PYTHONDONTWRITEBYTECODE=1 (a deployed source tree need not be
 writable); a per-ticker TRADINGAGENTS_MEMORY_LOG_PATH and
 TRADINGAGENTS_CHECKPOINT_ENABLED=false, as alpha-pulse sets them for every run; and
@@ -46,6 +47,9 @@ BOOTSTRAP = PACKAGE_DIR / "_bootstrap.py"
 FIXTURES = PACKAGE_DIR / "fixtures"
 
 DEFAULT_TIMEOUT_S = 600
+# 운영자의 ANTHROPIC_API_KEY 자리를 채운다. 키가 아니다: API 에 닿는 것은 없다(LLM 은
+# 가짜, 소켓은 거절). wire 재생이 이 값이 요청의 x-api-key 헤더에 닿는지 확인한다.
+HARNESS_ANTHROPIC_API_KEY = "alphapulse-contract-harness-key"
 DECISION_WORDS = contract_reader.DECISION_WORDS
 REPORT_SAVED_LINE_RE = re.compile(
     r"^Report saved: (?P<path>.+/reports/(?P<dir>[^/]+)_(?P<stamp>\d{8}_\d{6})/complete_report\.md)$"
@@ -87,7 +91,7 @@ def base_env(run_dir: Path, ticker: str) -> dict[str, str]:
         # application directory); mimic an extra (empty) entry so import resolution
         # has the same shape.
         "PYTHONPATH": str(run_dir / "fake_app"),
-        "GOOGLE_CLOUD_PROJECT": "tpmn-dev",
+        "ANTHROPIC_API_KEY": HARNESS_ANTHROPIC_API_KEY,
         "TRADINGAGENTS_RESULTS_DIR": str(run_dir / "results"),
         "TRADINGAGENTS_CACHE_DIR": str(run_dir / "cache"),
         "TRADINGAGENTS_MEMORY_LOG_PATH": str(run_dir / "memory" / memory_log_name(ticker)),

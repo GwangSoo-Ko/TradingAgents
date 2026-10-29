@@ -217,7 +217,11 @@ class TradingAgentsGraph:
         """Thinking/sampling kwargs for a role_models spec (per-spec wins, else
         run-level). vertex_anthropic gets effort/max_tokens/thinking (routed into
         the client's model_kwargs); vertex_gemini/vertex_grok still get only
-        sampling kwargs (their thinking-config param names are unverified)."""
+        sampling kwargs (their thinking-config param names are unverified).
+
+        직접 API 공급자 anthropic 도 effort/max_tokens/thinking 을 build_llm_kwargs 와
+        같은 규칙으로 받는다(번역은 클라이언트가: 직접 API 는 ChatAnthropic 필드,
+        Vertex 는 model_kwargs)."""
         provider = str(spec.get("provider", "")).lower()
         kwargs: dict[str, Any] = {}
         if provider == "google":
@@ -232,15 +236,14 @@ class TradingAgentsGraph:
             eff = spec.get("anthropic_effort", self.config.get("anthropic_effort"))
             if eff:
                 kwargs["effort"] = eff
-            if provider == "vertex_anthropic":
-                mt = spec.get("anthropic_max_tokens",
-                              self.config.get("anthropic_max_tokens"))
-                if mt is not None and mt != "":
-                    kwargs["max_tokens"] = int(mt)
-                th = spec.get("anthropic_thinking",
-                              self.config.get("anthropic_thinking"))
-                if th:
-                    kwargs["thinking"] = th
+            mt = spec.get("anthropic_max_tokens",
+                          self.config.get("anthropic_max_tokens"))
+            if mt is not None and mt != "":
+                kwargs["max_tokens"] = int(mt)
+            th = spec.get("anthropic_thinking",
+                          self.config.get("anthropic_thinking"))
+            if th:
+                kwargs["thinking"] = th
         temperature = spec.get("temperature", self.config.get("temperature"))
         if temperature is not None and temperature != "":
             kwargs["temperature"] = float(temperature)

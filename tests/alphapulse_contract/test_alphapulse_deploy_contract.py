@@ -19,7 +19,8 @@ building the tree the way uv does, compiling every file as Python 3.11 and impor
 every fork module in a subprocess under the harness's network guard. Expected values are
 literals taken from production (the hash of the pyproject.toml the production venv was
 built from, Python 3.11, the ``vertex`` extra, the two Vertex SDKs) -- nothing is
-recomputed by the code under test.
+recomputed by the code under test. (main.py 의 직접 API Claude 클라이언트가 도는 기본
+의존성도 같은 방식으로 고정한다.)
 
 The static and dependency analysis lives in ``_deploy_helpers.py`` (private to this file).
 """
@@ -50,8 +51,12 @@ from .harness import PACKAGE_DIR, REPO_ROOT, base_env, harness_python
 PRODUCTION_PYPROJECT_SHA256 = "1b270b35113358ddc995322fbf582c5cafd833399b238f1528a007a7f35feabe"
 BUILD_BACKEND = "setuptools.build_meta"
 PRODUCTION_EXTRA = "vertex"
-# What main.build_config() runs on (vertex_anthropic -> ChatAnthropicVertex, which the
-# anthropic SDK's Vertex client backs): {distribution: extras it must be installed with}.
+# Claude 호출이 Vertex 에서 운영자의 ANTHROPIC_API_KEY 로 옮겨진 뒤 main.build_config()
+# 가 도는 것(공급자 anthropic -> ChatAnthropic, anthropic SDK 가 뒷받침): 기본 의존성이라
+# 어떤 extra 를 지정하든 모든 설치에 있다. {배포판: 함께 설치돼야 하는 extras}.
+DIRECT_SDKS = {"langchain-anthropic": frozenset(), "anthropic": frozenset()}
+# fork 의 vertex_* 공급자가 도는 것(이제 main.py 의 것은 아니다; 배포는 여전히 이 extra
+# 를 설치한다): {배포판: 함께 설치돼야 하는 extras}.
 VERTEX_SDKS = {"langchain-google-vertexai": frozenset(), "anthropic": frozenset({"vertex"})}
 # The production image tracks the latest 3.11 patch release; admit all of them.
 PRODUCTION_PYTHONS = [f"3.11.{patch}" for patch in range(21)]
@@ -181,12 +186,29 @@ def test_build_backend_is_setuptools_and_the_isolated_build_env_gets_it(pyprojec
     assert any(dh.canonical(r.name) == "setuptools" for r in requires), build
 
 
+def test_base_dependencies_install_the_sdks_main_py_runs_on(pyproject):
+    """깨지는 경우: langchain-anthropic 이 무조건 기본 의존성이 아니게 된다(운영이 지정하지
+    않는 extra 로 옮겨짐, 병합으로 빠짐, 3.11 Linux 이미지가 맞추지 못하는 marker 가 붙음),
+    또는 anthropic SDK 를 더는 가져오지 않는다. main.py 의 모든 LLM 호출은 ``anthropic`` ->
+    ChatAnthropic 이라, 다음 재설치 뒤 모든 분석이 첫 LLM 생성에서 죽는다(ImportError,
+    rc 1). 기본 의존성이므로 배포가 어떤 extra 를 지정하든 재설치에서 남는다."""
+    base = [_requirement(r) for r in (pyproject.get("project") or {}).get("dependencies") or []]
+    declared = {dh.canonical(r.name): r for r in base}
+    assert "langchain-anthropic" in declared, sorted(declared)
+    assert _applies(declared["langchain-anthropic"]), str(declared["langchain-anthropic"])
+    closure = dh.dependency_closure([str(r) for r in base])
+    for name in DIRECT_SDKS:
+        assert name in closure, (name, sorted(closure)[:40])
+
+
 def test_vertex_extra_installs_the_vertex_sdks_production_runs_on(pyproject):
     """Breaks if the ``vertex`` extra disappears or loses an SDK -- upstream's pyproject
     (v0.5.1/v0.5.2) has no [vertex] extra at all, so resolving pyproject 'theirs' does it
     silently. ``uv pip install '<clone>[vertex]'`` only warns about an unknown extra and
-    installs no Vertex SDK; every run then dies at its first LLM construction
-    (vertex_anthropic -> ChatAnthropicVertex import error, rc 1) from the next rebuild on."""
+    installs no Vertex SDK. main.py 는 이제 이것이 필요 없지만(Claude 호출은 직접 API, 위
+    시험 참고) 배포는 여전히 이 extra 로 설치하고, fork 의 vertex_* 공급자(CLI 의 Vertex
+    프리셋, role_models 항목)는 extra 가 없으면 첫 LLM 생성에서 죽는다(ChatAnthropicVertex
+    import 오류)."""
     extras = (pyproject.get("project") or {}).get("optional-dependencies") or {}
     assert PRODUCTION_EXTRA in extras, sorted(extras)
     declared = {dh.canonical(r.name): r for r in map(_requirement, extras[PRODUCTION_EXTRA])}
@@ -281,7 +303,8 @@ def test_isolated_build_emits_the_metadata_and_files_uv_installs(pyproject, tmp_
     """Breaks if the tree no longer builds the way the deployment builds it -- a copy of the
     clone, built by the declared PEP 517 backend in an environment holding nothing but the
     build requirements -- or if the built metadata stops carrying what production installs:
-    the ``vertex`` extra with both SDKs, python-dotenv, a Requires-Python admitting 3.11, and
+    the ``vertex`` extra with both SDKs, python-dotenv (그리고 기본 요구사항인
+    langchain-anthropic), a Requires-Python admitting 3.11, and
     every module of ``tradingagents`` and ``cli``. Covers the failure modes the static tests
     above name (backend, discovery, dynamic version, extras) as the real build sees them,
     plus build errors they do not model -- metadata setuptools rejects, such as an SPDX
@@ -333,6 +356,9 @@ def test_isolated_build_emits_the_metadata_and_files_uv_installs(pyproject, tmp_
         assert any(dh.canonical(r.name) == name and needed_extras <= set(r.extras)
                    and _applies(r, PRODUCTION_EXTRA) for r in requires), \
             (name, [str(r) for r in requires])
+    # main.py 의 직접 API 클라이언트: 빌드된 wheel 의 무조건 요구사항이다.
+    assert any(dh.canonical(r.name) == "langchain-anthropic" and _applies(r)
+               for r in requires), [str(r) for r in requires]
     assert any(dh.canonical(r.name) == "python-dotenv" and _applies(r) for r in requires), \
         [str(r) for r in requires]
     sources = {_rel(p) for p in dh.python_sources(REPO_ROOT) if p.name != "main.py"}
@@ -437,7 +463,7 @@ def test_every_import_the_fork_cannot_do_without_is_installed_by_its_declared_de
     [vertex] extra), or an import-time import of a package only a non-production extra
     provides. Production's venv has exactly what ``uv pip install '.[vertex]'`` resolves, so
     such an import is a ModuleNotFoundError there: at import (rc 1 for every run) or on
-    the Vertex LLM path. The allowed set is derived from pyproject plus the installed
+    an LLM path. The allowed set is derived from pyproject plus the installed
     metadata of those requirements (the transitive closure, markers evaluated for the
     production image); imports behind a guard that recovers are optional and skipped."""
     groups = dh.requirement_groups(pyproject)

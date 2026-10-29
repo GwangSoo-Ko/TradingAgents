@@ -11,8 +11,11 @@ same underlying call ``ChatAnthropicVertex`` makes, so a green run confirms the
 endpoint accepts our parameters end-to-end. Auth is ADC (no vendor API key).
 
 Usage:
-    GOOGLE_CLOUD_PROJECT=tpmn-dev python scripts/smoke_vertex_thinking.py
-    python scripts/smoke_vertex_thinking.py --project tpmn-dev --location global
+    GOOGLE_CLOUD_PROJECT=<your-gcp-project> python scripts/smoke_vertex_thinking.py
+    python scripts/smoke_vertex_thinking.py --project <your-gcp-project> --location global
+
+기본 프로젝트는 없다: GOOGLE_CLOUD_PROJECT 나 --project 가 꼭 있어야 한다. main.py 는
+이제 Vertex 에서 돌지 않는다; 그 스모크는 scripts/smoke_anthropic_thinking.py(직접 API)다.
 
 Requires: ``gcloud auth application-default login`` (or GOOGLE_APPLICATION_CREDENTIALS)
 and the ``anthropic[vertex]`` extra (for google-auth). Tiny cost: 2 calls,
@@ -25,7 +28,8 @@ import argparse
 import os
 import sys
 
-# (model, effort) pairs mirroring the tiered default in main.py.
+# 계층형 Claude 블록의 (model, effort) 쌍 (main.py 가 직접 API 로 옮기기 전의 것;
+# vertex_anthropic 공급자는 여전히 같은 노브를 받는다).
 CASES = [
     ("claude-opus-5-5", "max"),
     ("claude-sonnet-5-5", "high"),

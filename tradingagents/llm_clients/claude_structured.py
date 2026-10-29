@@ -5,9 +5,15 @@ or ``"any"``) with a 400 -- 'tool_choice: type "tool" and "any" are not supporte
 for this model.' -- and that forced call is exactly what
 ``ChatAnthropicVertex.with_structured_output`` sends. The API's native
 alternative, ``output_config.format``, fails on ``PortfolioDecision`` with
-"Grammar compilation timed out" (tpmn-dev, 2026-10-01), so the schema stays a
+"Grammar compilation timed out" (Vertex, 2026-10-01), so the schema stays a
 tool: bound alone with ``tool_choice="auto"``, the model is told to answer
 through it, and asked once more when its reply carries no call.
+
+직접 Anthropic API 의 ``ChatAnthropic.with_structured_output`` 도 thinking 이 없으면
+같은 강제 호출을 보낸다(thinking 이 켜져 있으면 tool_choice 없이 묶고 다시 묻지
+않는다). 그래서 두 Claude 클라이언트(직접 API 의 ``NormalizedChatAnthropic``, Vertex 의
+``NormalizedChatAnthropicVertex``)가 이 모듈의 ``ClaudeStructuredOutput`` mixin 하나를
+함께 쓴다.
 
 The tool definition and the parse (``Schema.model_validate`` on the call's
 arguments) are the ones the forced path used, so the fork's fail-closed plan
@@ -111,3 +117,17 @@ def auto_tool_structured_output(llm: Any, schema: Any, *, include_raw: bool = Fa
             return {"raw": raw, "parsed": None, "parsing_error": exc}
 
     return RunnableLambda(_run, name=f"{name}AutoToolStructuredOutput")
+
+
+class ClaudeStructuredOutput:
+    """강제하지 않고 모델이 고르는 tool 로 받는 구조화 출력.
+
+    두 Claude 채팅 클래스가 LangChain 기반 클래스보다 앞(MRO)에 두는 단 하나의 mixin:
+    ``NormalizedChatAnthropic``(직접 Anthropic API)과 ``NormalizedChatAnthropicVertex``
+    (Vertex). 기반 클래스의 ``with_structured_output`` 은 스키마 tool 을 강제하고,
+    Claude Opus 5.5 / Sonnet 5.5 는 이를 400 으로 거절한다(모듈 docstring 참고).
+    ``method`` 등 LangChain 의 다른 인자는 예전처럼 받기만 하고 쓰지 않는다.
+    """
+
+    def with_structured_output(self, schema, *, include_raw=False, **kwargs):
+        return auto_tool_structured_output(self, schema, include_raw=include_raw)

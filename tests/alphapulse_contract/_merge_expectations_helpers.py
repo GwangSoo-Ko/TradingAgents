@@ -92,7 +92,7 @@ FAULT_MARKER = "harness-merge-expectations: RESOURCE_EXHAUSTED"
 # Installed as ``sitecustomize`` through PYTHONPATH. It waits for the harness's
 # scripted model module to be imported by _bootstrap.py, then wraps its reply
 # function: a chat call whose role script carries ``chat_fault`` (and whose prompt
-# contains ``prompt_contains``, when given) raises what ChatAnthropicVertex raises
+# contains ``prompt_contains``, when given) raises what ChatAnthropic raises
 # on HTTP 429 — ``anthropic.RateLimitError`` (RuntimeError if the SDK is missing).
 # The harness records the call as ``reply: {"raised": ...}`` like any provider error.
 # A sitecustomize the interpreter already had is found further down sys.path and run
@@ -128,9 +128,8 @@ def _provider_error(message):
     try:
         import anthropic
         import httpx
-        url = ("https://aiplatform.googleapis.com/v1/projects/tpmn-dev/locations/global/"
-               "publishers/anthropic/models/claude-sonnet-5:rawPredict")
-        body = {"error": {"code": 429, "message": message, "status": "RESOURCE_EXHAUSTED"}}
+        url = "https://api.anthropic.com/v1/messages"
+        body = {"type": "error", "error": {"type": "rate_limit_error", "message": message}}
         response = httpx.Response(429, request=httpx.Request("POST", url), json=body)
         return anthropic.RateLimitError(message, response=response, body=body)
     except Exception:  # SDK not installed: a plain provider-style error

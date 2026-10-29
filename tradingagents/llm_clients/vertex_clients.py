@@ -23,22 +23,17 @@ from typing import Any
 
 from . import vertex_auth
 from .base_client import BaseLLMClient, normalize_content
-from .claude_structured import auto_tool_structured_output
+from .claude_structured import ClaudeStructuredOutput
 
 # Cache of dynamically-created Normalized<Base> subclasses, keyed on the base
 # class, so the subclass identity is stable across calls (and lazy imports).
 _NORMALIZED_CLASSES: dict = {}
 
-
-class _ClaudeStructuredOutput:
-    """Structured output through an auto-chosen tool, never a forced one.
-
-    Claude Opus 5.5 / Sonnet 5.5 reject the forced ``tool_choice`` that
-    ``ChatAnthropicVertex.with_structured_output`` sends (see claude_structured).
-    """
-
-    def with_structured_output(self, schema, *, include_raw=False, **kwargs):
-        return auto_tool_structured_output(self, schema, include_raw=include_raw)
+# Claude Opus 5.5 / Sonnet 5.5 는 ``ChatAnthropicVertex.with_structured_output`` 이
+# 보내는 강제 ``tool_choice`` 를 거절한다. 공용 mixin(직접 API 의
+# ``NormalizedChatAnthropic`` 도 쓴다)이 모델이 고르는 tool 로 답을 받는다.
+# 기존 import 를 위해 옛 이름으로도 남긴다.
+_ClaudeStructuredOutput = ClaudeStructuredOutput
 
 
 def _normalized_subclass(base_cls: type, *mixins: type) -> type:

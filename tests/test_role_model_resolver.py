@@ -223,3 +223,58 @@ class TestVertexAnthropicThinkingKwargs:
         g._llm_for("research_manager")
         call = next(c for c in calls if c["provider"] == "vertex_anthropic")
         assert call["effort"] == "max"
+
+
+@pytest.mark.unit
+class TestDirectAnthropicThinkingKwargs:
+    """직접 ``anthropic`` 공급자(Vertex 를 떠난 뒤 main.py 의 공급자)도 계층 경로와
+    role_models 경로 모두에서 anthropic_effort / anthropic_max_tokens /
+    anthropic_thinking 을 vertex_anthropic 과 같은 규칙으로 받는다."""
+
+    def _single(self, **over):
+        cfg = dict(_BASE)
+        cfg.update(
+            llm_provider="anthropic",
+            quick_think_llm="claude-sonnet-5-5",
+            deep_think_llm="claude-opus-5-5",
+        )
+        cfg.update(over)
+        return cfg
+
+    def test_tier_path_forwards_effort_max_tokens_thinking(self, monkeypatch):
+        calls = _patch_factory(monkeypatch)
+        g = _graph(self._single(
+            anthropic_effort="high", anthropic_max_tokens=32000, anthropic_thinking="adaptive",
+            max_tokens="8000",  # 일반 상한(TRADINGAGENTS_MAX_TOKENS)은 이기지 못한다
+        ))
+        g._llm_for("market_analyst")
+        (call,) = [c for c in calls if c["provider"] == "anthropic"]
+        assert {k: call[k] for k in ("effort", "max_tokens", "thinking")} == {
+            "effort": "high", "max_tokens": 32000, "thinking": "adaptive"}
+        # 직접 API 클라이언트에는 Vertex project/location 이 없다
+        assert "project" not in call and "location" not in call
+
+    def test_role_spec_forwards_and_overrides_like_vertex(self, monkeypatch):
+        calls = _patch_factory(monkeypatch)
+        g = _graph(self._single(
+            anthropic_effort="high", anthropic_max_tokens="32000", anthropic_thinking="adaptive",
+            role_models={"portfolio_manager": {
+                "provider": "anthropic", "model": "claude-opus-5-5",
+                "anthropic_effort": "xhigh",  # 역할 spec 이 실행 단위 값보다 우선
+            }},
+        ))
+        g._llm_for("portfolio_manager")
+        call = next(c for c in calls
+                    if c["provider"] == "anthropic" and c["model"] == "claude-opus-5-5")
+        assert call["effort"] == "xhigh"
+        assert call["max_tokens"] == 32000 and isinstance(call["max_tokens"], int)
+        assert call["thinking"] == "adaptive"
+
+    def test_defaults_forward_nothing(self, monkeypatch):
+        calls = _patch_factory(monkeypatch)
+        g = _graph(self._single(role_models={"trader": {
+            "provider": "anthropic", "model": "claude-sonnet-5-5"}}))
+        g._llm_for("trader")
+        g._llm_for("market_analyst")
+        for call in calls:
+            assert not {"effort", "max_tokens", "thinking"} & set(call), call

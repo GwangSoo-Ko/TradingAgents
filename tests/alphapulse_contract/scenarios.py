@@ -10,7 +10,7 @@ A scenario is a plain dict; ``harness.run_main(tmp_path, scenario)`` runs it.
     env               {name: str | None}   extra env (None removes a base variable)
     memory_log_seed   str | None   written to the per-ticker memory log before the run
     dotenv            str | None   served as the .env find_dotenv(usecwd=True) finds
-    llm_boundary      "factory" (fake create_llm_client) | "sdk" (fake ChatAnthropicVertex)
+    llm_boundary      "factory" (fake create_llm_client) | "sdk" (fake langchain_anthropic.ChatAnthropic)
     roles             {role: RoleScript}   role keys as in cli.report_meta + "reflector"
     http_rules        [rule]   tried before fixtures/http_routes.json (same rule schema)
     yfinance          {"faults": [fault], "info_overrides": {symbol: {info keys}}}

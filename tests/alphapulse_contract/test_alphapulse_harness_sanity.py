@@ -283,15 +283,15 @@ def test_every_ready_scenario_runs_green_and_offline(ap_run, name):
             "portfolio_manager"} <= roles, roles
 
 
-def test_sdk_boundary_mode_builds_every_llm_through_the_fake_vertex_class(ap_run):
+def test_sdk_boundary_mode_builds_every_llm_through_the_fake_chat_anthropic_class(ap_run):
     """Breaks if: the SDK-boundary mode stops intercepting construction (the fork would then
-    build a real ChatAnthropicVertex) — the LLM-kwargs contract tests depend on it."""
+    build a real ChatAnthropic) — the LLM-kwargs contract tests depend on it."""
     spec = scenarios.derive(scenarios.get(S1), {"llm_boundary": "sdk"}, name=S1 + "_sdk")
     res = ap_run(spec)
     res.assert_ok()
     records = res.llm_constructions
     assert records and {r["boundary"] for r in records} == {"sdk"}
-    assert {r["sdk_class"] for r in records} == {"ChatAnthropicVertex"}
+    assert {r["sdk_class"] for r in records} == {"ChatAnthropic"}
     for role in res.roles_called():
         assert res.llm_for(role)["boundary"] == "sdk", role
 

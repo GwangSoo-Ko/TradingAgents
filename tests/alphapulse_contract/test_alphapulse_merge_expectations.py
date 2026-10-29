@@ -224,7 +224,7 @@ SETTLING_ENTRY = entry_text(
 
 def test_reflection_error_leaves_the_entry_pending_and_the_run_completes(tmp_path):
     """Expected drift, not a contract today: on a2981a7 the settlement at the start of
-    propagate() calls the reflector unguarded, so one Vertex 429 on that Sonnet call
+    propagate() calls the reflector unguarded, so one API 429 on that Sonnet call
     ends the run with rc 1 before any analysis (web: a failed analysis; nightly: a
     failed ticker), again on every run of that ticker until the quota recovers.
 
@@ -235,7 +235,7 @@ def test_reflection_error_leaves_the_entry_pending_and_the_run_completes(tmp_pat
     be reflected) or loses it.
 
     The provider error is injected at the LLM boundary (``_merge_expectations_helpers``
-    shim: anthropic.RateLimitError, what ChatAnthropicVertex raises on HTTP 429) for
+    shim: anthropic.RateLimitError, what ChatAnthropic raises on HTTP 429) for
     the reflection of the 2026-08-05 entry only.
 
     New behaviour: rc 0 with the usual decision and plan; the 2026-08-05 entry stays
